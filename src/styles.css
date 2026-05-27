@@ -330,6 +330,19 @@ select {
   outline: none;
 }
 
+.compact-select {
+  display: grid;
+  gap: 6px;
+  color: #64707d;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.compact-select select {
+  min-width: 150px;
+}
+
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2644,6 +2657,133 @@ tbody tr.selected-row {
   font-size: 12px;
   font-weight: 850;
   white-space: nowrap;
+}
+
+.strategies-page .metrics-grid {
+  grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(0, 1fr));
+}
+
+.strategy-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.8fr);
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.strategy-detail-layout {
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.95fr);
+}
+
+.strategy-list-panel,
+.strategy-results-panel,
+.strategy-weight-panel {
+  min-width: 0;
+}
+
+.strategy-create-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.strategy-create-row input {
+  min-width: 0;
+}
+
+.strategy-list {
+  display: grid;
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.strategy-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid #dde3ea;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+  text-align: left;
+}
+
+.strategy-list-item:hover,
+.strategy-list-item.active {
+  border-color: #a6d8ce;
+  background: #eef9f6;
+}
+
+.strategy-list-item strong,
+.strategy-list-item small {
+  display: block;
+}
+
+.strategy-list-item strong {
+  color: #17202a;
+  font-size: 14px;
+}
+
+.strategy-list-item small {
+  margin-top: 4px;
+  color: #64707d;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.strategy-list-item b {
+  align-self: center;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.strategy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.strategy-table-wrap {
+  max-height: 310px;
+  border: 1px solid #edf0f3;
+  border-radius: 8px;
+}
+
+.strategy-table-wrap thead th,
+.strategy-weight-table-wrap thead th {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  background: #ffffff;
+  box-shadow: 0 1px 0 #edf0f3;
+}
+
+.strategy-result-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.strategy-result-cards .metric {
+  padding: 12px;
+}
+
+.strategy-result-cards .metric strong {
+  font-size: 18px;
+}
+
+.strategy-weight-table-wrap {
+  max-height: 640px;
+  border: 1px solid #edf0f3;
+  border-radius: 8px;
+}
+
+.strategy-weight-table-wrap .signal-weight-table {
+  min-width: 680px;
 }
 
 .settings-actions {

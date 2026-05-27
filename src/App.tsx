@@ -48,7 +48,7 @@ import {
   type StockSymbol,
 } from "./data/market";
 
-type Screen = "stocks" | "portfolio" | "settings";
+type Screen = "stocks" | "portfolio" | "strategies" | "settings";
 type ChartMode = "price" | "candles" | "volume" | "returns";
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
@@ -444,6 +444,40 @@ type WeightedTechnicalSignal = {
   contributions: Array<{ key: TechnicalSignalKey; label: string; group: string; score: number; weight: number; contribution: number; value: number }>;
 };
 
+type TradingStrategy = {
+  id: string;
+  name: string;
+  description: string;
+  weights: SignalWeights;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type StrategyBacktestPoint = {
+  date: string;
+  value: number;
+  cash: number;
+  holdings: number;
+  spy: number;
+  trades: number;
+};
+
+type StrategyBacktestResult = {
+  strategyId: string;
+  name: string;
+  endingValue: number;
+  returnPct: number;
+  spyReturnPct: number;
+  alphaPct: number;
+  maxDrawdownPct: number;
+  winRate: number;
+  trades: number;
+  buys: number;
+  sells: number;
+  openPositions: number;
+  points: StrategyBacktestPoint[];
+};
+
 type RecommendationAction = "Strong Buy" | "Buy" | "Hold" | "Sell";
 type TableSortKey = "recommendation" | "confidence" | "gapUps" | "trend" | "change" | "weight" | "volume" | "state" | "risk" | "symbol";
 type RecommendationFilter = "all" | RecommendationAction;
@@ -668,6 +702,154 @@ function loadSignalWeights(): SignalWeights {
 
 function saveSignalWeights(weights: SignalWeights) {
   localStorage.setItem("technical_signal_weights", JSON.stringify(weights));
+}
+
+function normalizeSignalWeights(weights: Partial<Record<TechnicalSignalKey, number>> | undefined): SignalWeights {
+  const defaults = defaultSignalWeights();
+  return Object.fromEntries(
+    TECHNICAL_SIGNAL_DEFINITIONS.map((definition) => {
+      const value = Number(weights?.[definition.key]);
+      return [definition.key, Number.isFinite(value) ? value : defaults[definition.key]];
+    }),
+  ) as SignalWeights;
+}
+
+function scaleSignalWeights(base: SignalWeights, multipliers: Partial<Record<TechnicalSignalKey, number>>, mutedGroups: string[] = []): SignalWeights {
+  return Object.fromEntries(
+    TECHNICAL_SIGNAL_DEFINITIONS.map((definition) => {
+      if (mutedGroups.includes(definition.group)) {
+        return [definition.key, 0];
+      }
+      return [definition.key, Number(((base[definition.key] ?? 0) * (multipliers[definition.key] ?? 1)).toFixed(2))];
+    }),
+  ) as SignalWeights;
+}
+
+function starterStrategies(): TradingStrategy[] {
+  const now = new Date().toISOString();
+  const defaults = defaultSignalWeights();
+  const trendMomentum = scaleSignalWeights(defaults, {
+    smaTrend: 1.65,
+    emaMacd: 1.55,
+    priceVsSma200: 1.45,
+    roc20: 1.55,
+    goldenCross50_200: 1.6,
+    adxTrend: 1.5,
+    relativeSpy20: 1.35,
+    bollinger20: 0.35,
+    choppiness14: 1.25,
+  });
+  const breakout = scaleSignalWeights(defaults, {
+    breakout20: 1.8,
+    donchian55: 1.8,
+    volumeRatio: 1.45,
+    dollarVolumeTrend: 1.45,
+    gap: 1.35,
+    resistanceDistance20: 1.55,
+    relativeSpy20: 1.25,
+    squeeze20: 1.2,
+  });
+  const volumeFlow = scaleSignalWeights(defaults, {
+    volumeRatio: 1.7,
+    obvTrend: 1.6,
+    mfi14: 1.45,
+    chaikinMoneyFlow20: 1.7,
+    accumulationDistributionTrend: 1.55,
+    dollarVolumeTrend: 1.55,
+    downsideVolatility20: 1.2,
+  });
+  const defensive = scaleSignalWeights(defaults, {
+    atr14: 1.75,
+    downsideVolatility20: 1.8,
+    betaSpy60: 1.65,
+    correlationSpy60: 1.25,
+    priceVsSma200: 1.2,
+    choppiness14: 1.45,
+    supportDistance20: 1.25,
+  });
+  const meanReversion = scaleSignalWeights(defaults, {
+    bollinger20: 1.85,
+    rsi14: 1.6,
+    stochastic14: 1.45,
+    williamsR14: 1.45,
+    cci20: 1.35,
+    supportDistance20: 1.2,
+    emaMacd: 0.55,
+    breakout20: 0.4,
+    donchian55: 0.4,
+  });
+
+  return [
+    {
+      id: "default-balanced",
+      name: "Balanced signal mix",
+      description: "Default weighted blend across trend, momentum, volume, risk, and relative strength.",
+      weights: defaults,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "trend-momentum",
+      name: "Trend momentum",
+      description: "Favors sustained uptrends, positive MACD, 50/200 structure, and SPY-relative strength.",
+      weights: trendMomentum,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "breakout-volume",
+      name: "Breakout with volume",
+      description: "Looks for range breakouts, gap pressure, resistance tests, and expanding traded volume.",
+      weights: breakout,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "volume-accumulation",
+      name: "Volume accumulation",
+      description: "Prioritizes money flow, OBV, accumulation/distribution, and dollar-volume confirmation.",
+      weights: volumeFlow,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "risk-controlled",
+      name: "Risk controlled",
+      description: "Penalizes downside volatility, high beta, high ATR, and noisy regimes more aggressively.",
+      weights: defensive,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "mean-reversion",
+      name: "Mean reversion",
+      description: "Leans on RSI, stochastic, Williams %R, CCI, and Bollinger position while muting breakouts.",
+      weights: meanReversion,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+}
+
+function loadStrategies(): TradingStrategy[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem("trading_signal_strategies") ?? "[]") as TradingStrategy[];
+    if (Array.isArray(parsed) && parsed.length) {
+      return parsed.map((strategy) => ({
+        ...strategy,
+        weights: normalizeSignalWeights(strategy.weights),
+      }));
+    }
+  } catch {
+    // Fall through to starter strategies.
+  }
+  const strategies = starterStrategies();
+  saveStrategies(strategies);
+  return strategies;
+}
+
+function saveStrategies(strategies: TradingStrategy[]) {
+  localStorage.setItem("trading_signal_strategies", JSON.stringify(strategies));
 }
 
 function stateRank(state: MarketState) {
@@ -1453,6 +1635,224 @@ function closeOnOrBefore(stock: StockSymbol, date: string) {
 function closeOnOrAfter(stock: StockSymbol, date: string) {
   const candle = stock.candles.find((row) => row.date >= date);
   return candle?.close ?? closeOnOrBefore(stock, date);
+}
+
+function candleOnOrAfter(stock: StockSymbol, date: string) {
+  return stock.candles.find((row) => row.date >= date);
+}
+
+function candleIndexOnOrBefore(stock: StockSymbol, date: string) {
+  for (let index = stock.candles.length - 1; index >= 0; index -= 1) {
+    if (stock.candles[index].date <= date) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function historicalStockAt(stock: StockSymbol, candleIndex: number, lookbackDays: number): StockSymbol | null {
+  if (candleIndex < 1) {
+    return null;
+  }
+  const candles = stock.candles.slice(0, candleIndex + 1);
+  const latest = candles[candles.length - 1];
+  const previous = candles[candles.length - 2];
+  const state = classifyMarketState(candles, lookbackDays);
+  return {
+    ...stock,
+    ...state,
+    price: latest.close,
+    change: previous?.close ? (latest.close / previous.close - 1) * 100 : 0,
+    risk: rollingRisk(candles, candles.length - 1),
+    candles,
+  };
+}
+
+function maxDrawdownPct(points: StrategyBacktestPoint[]) {
+  let peak = points[0]?.value ?? 0;
+  let drawdown = 0;
+  points.forEach((point) => {
+    peak = Math.max(peak, point.value);
+    if (peak > 0) {
+      drawdown = Math.min(drawdown, (point.value / peak - 1) * 100);
+    }
+  });
+  return Math.abs(drawdown);
+}
+
+function simulateStrategy(
+  strategy: TradingStrategy,
+  stocks: StockSymbol[],
+  volumeSignals: VolumeStateRiskSignal[],
+  technicalSignals: TechnicalSignalCache | null,
+  lookbackDays: number,
+): StrategyBacktestResult {
+  const startingCash = 100_000;
+  const maxPositions = 5;
+  const spy = stocks.find((stock) => stock.symbol === "SPY") ?? stocks[0];
+  const dates = (spy?.candles ?? []).slice(-Math.max(2, lookbackDays + 1)).map((candle) => candle.date);
+  const tradableStocks = stocks.filter((stock) => stock.symbol !== "SPY" && stock.candles.length > 20);
+  let cash = startingCash;
+  let buys = 0;
+  let sells = 0;
+  let wins = 0;
+  let losses = 0;
+  const positions = new Map<string, { shares: number; averageCost: number }>();
+  const points: StrategyBacktestPoint[] = [];
+  const spyStart = spy ? closeOnOrBefore(spy, dates[0] ?? spy.candles[0]?.date ?? "") : 0;
+
+  if (dates.length < 2 || !tradableStocks.length) {
+    return {
+      strategyId: strategy.id,
+      name: strategy.name,
+      endingValue: startingCash,
+      returnPct: 0,
+      spyReturnPct: 0,
+      alphaPct: 0,
+      maxDrawdownPct: 0,
+      winRate: 0,
+      trades: 0,
+      buys: 0,
+      sells: 0,
+      openPositions: 0,
+      points: [],
+    };
+  }
+
+  for (let dayIndex = 1; dayIndex < dates.length; dayIndex += 1) {
+    const signalDate = dates[dayIndex - 1];
+    const tradeDate = dates[dayIndex];
+    let tradesToday = 0;
+
+    for (const [symbol, position] of [...positions.entries()]) {
+      const stock = tradableStocks.find((item) => item.symbol === symbol);
+      if (!stock) {
+        continue;
+      }
+      const signalIndex = candleIndexOnOrBefore(stock, signalDate);
+      const historical = historicalStockAt(stock, signalIndex, DEFAULT_STATE_LOOKBACK);
+      const tradeCandle = candleOnOrAfter(stock, tradeDate);
+      if (!historical || !tradeCandle?.open) {
+        continue;
+      }
+      const recommendation = buildTradeRecommendation(
+        historical,
+        DEFAULT_STATE_LOOKBACK,
+        volumeSignals,
+        technicalSnapshotFor(technicalSignals, symbol, signalDate),
+        strategy.weights,
+      );
+      const shouldSell = recommendation.action === "Sell" || recommendation.score <= -0.45 || historical.marketState === "Bear";
+      if (shouldSell) {
+        cash += position.shares * tradeCandle.open;
+        const profitLoss = (tradeCandle.open - position.averageCost) * position.shares;
+        if (profitLoss >= 0) {
+          wins += 1;
+        } else {
+          losses += 1;
+        }
+        positions.delete(symbol);
+        sells += 1;
+        tradesToday += 1;
+      }
+    }
+
+    const openSlots = Math.max(0, maxPositions - positions.size);
+    if (openSlots > 0 && cash > 0) {
+      const candidates = tradableStocks
+        .map((stock) => {
+          if (positions.has(stock.symbol)) {
+            return null;
+          }
+          const signalIndex = candleIndexOnOrBefore(stock, signalDate);
+          const historical = historicalStockAt(stock, signalIndex, DEFAULT_STATE_LOOKBACK);
+          const tradeCandle = candleOnOrAfter(stock, tradeDate);
+          if (!historical || !tradeCandle?.open || tradeCandle.open <= 0) {
+            return null;
+          }
+          const recommendation = buildTradeRecommendation(
+            historical,
+            DEFAULT_STATE_LOOKBACK,
+            volumeSignals,
+            technicalSnapshotFor(technicalSignals, stock.symbol, signalDate),
+            strategy.weights,
+          );
+          if (recommendation.action !== "Strong Buy" && recommendation.action !== "Buy") {
+            return null;
+          }
+          if (historical.marketState === "Bear" || historical.risk === "High") {
+            return null;
+          }
+          const quality =
+            recommendation.score +
+            recommendation.confidence / 100 +
+            Math.max(0, historical.trendReturn) / 18 +
+            (historical.marketState === "Bull" ? 0.25 : 0) +
+            (historical.risk === "Low" ? 0.18 : 0);
+          return { stock, recommendation, tradeCandle, quality };
+        })
+        .filter((candidate): candidate is { stock: StockSymbol; recommendation: TradeRecommendation; tradeCandle: Candle; quality: number } =>
+          Boolean(candidate),
+        )
+        .sort((left, right) => right.quality - left.quality)
+        .slice(0, openSlots);
+
+      const deployableCash = cash * 0.92;
+      candidates.forEach((candidate, index) => {
+        const remainingCandidates = candidates.length - index;
+        const allocation = remainingCandidates ? deployableCash / remainingCandidates : 0;
+        const shares = Math.floor(allocation / candidate.tradeCandle.open);
+        if (shares < 1 || shares * candidate.tradeCandle.open > cash) {
+          return;
+        }
+        cash -= shares * candidate.tradeCandle.open;
+        positions.set(candidate.stock.symbol, {
+          shares,
+          averageCost: candidate.tradeCandle.open,
+        });
+        buys += 1;
+        tradesToday += 1;
+      });
+    }
+
+    const holdings = [...positions.entries()].reduce((sum, [symbol, position]) => {
+      const stock = tradableStocks.find((item) => item.symbol === symbol);
+      return sum + (stock ? closeOnOrBefore(stock, tradeDate) * position.shares : 0);
+    }, 0);
+    const value = cash + holdings;
+    const spyClose = spy ? closeOnOrBefore(spy, tradeDate) : 0;
+    const spyValue = spyStart ? (spyClose / spyStart) * startingCash : startingCash;
+    points.push({
+      date: tradeDate,
+      value: Number(value.toFixed(2)),
+      cash: Number(cash.toFixed(2)),
+      holdings: Number(holdings.toFixed(2)),
+      spy: Number(spyValue.toFixed(2)),
+      trades: tradesToday,
+    });
+  }
+
+  const endingValue = points[points.length - 1]?.value ?? startingCash;
+  const spyEnding = points[points.length - 1]?.spy ?? startingCash;
+  const returnPct = (endingValue / startingCash - 1) * 100;
+  const spyReturnPct = (spyEnding / startingCash - 1) * 100;
+  const closedTrades = wins + losses;
+
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    endingValue: Number(endingValue.toFixed(2)),
+    returnPct: Number(returnPct.toFixed(2)),
+    spyReturnPct: Number(spyReturnPct.toFixed(2)),
+    alphaPct: Number((returnPct - spyReturnPct).toFixed(2)),
+    maxDrawdownPct: Number(maxDrawdownPct(points).toFixed(2)),
+    winRate: closedTrades ? Math.round((wins / closedTrades) * 100) : 0,
+    trades: buys + sells,
+    buys,
+    sells,
+    openPositions: positions.size,
+    points,
+  };
 }
 
 function numberFromAlpaca(value: string | number | null | undefined) {
@@ -3201,6 +3601,10 @@ function AppShell({
           <button className={screen === "portfolio" ? "active" : ""} onClick={() => setScreen("portfolio")}>
             <Wallet size={18} />
             Portfolio
+          </button>
+          <button className={screen === "strategies" ? "active" : ""} onClick={() => setScreen("strategies")}>
+            <SlidersHorizontal size={18} />
+            Strategies
           </button>
           <button className={screen === "settings" ? "active" : ""} onClick={() => setScreen("settings")}>
             <Settings size={18} />
@@ -5026,6 +5430,374 @@ function PortfolioScreen() {
   );
 }
 
+function StrategiesScreen() {
+  const [dataset, setDataset] = useState<MarketDataset | null>(null);
+  const [volumeSignals, setVolumeSignals] = useState<VolumeStateRiskSignal[]>([]);
+  const [error, setError] = useState("");
+  const [strategies, setStrategies] = useState<TradingStrategy[]>(() => loadStrategies());
+  const [selectedStrategyId, setSelectedStrategyId] = useState(() => loadStrategies()[0]?.id ?? "default-balanced");
+  const [backtestWindow, setBacktestWindow] = useState(90);
+  const [newStrategyName, setNewStrategyName] = useState("");
+  const [appliedStrategy, setAppliedStrategy] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([loadMarketDataset(), loadVolumeStateRiskSignals()])
+      .then(([nextDataset, nextVolumeSignals]) => {
+        if (cancelled) {
+          return;
+        }
+        setDataset(nextDataset);
+        setVolumeSignals(nextVolumeSignals);
+      })
+      .catch((loadError: Error) => {
+        if (!cancelled) {
+          setError(loadError.message);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    saveStrategies(strategies);
+    if (!strategies.some((strategy) => strategy.id === selectedStrategyId)) {
+      setSelectedStrategyId(strategies[0]?.id ?? "");
+    }
+  }, [selectedStrategyId, strategies]);
+
+  const stocks = useMemo(() => applyStateLookback(dataset?.symbols ?? [], DEFAULT_STATE_LOOKBACK), [dataset]);
+  const technicalSignals = useMemo(() => (dataset ? buildCachedTechnicalSignals(dataset) : null), [dataset]);
+  const results = useMemo(
+    () =>
+      strategies.map((strategy) =>
+        simulateStrategy(strategy, stocks, volumeSignals, technicalSignals, backtestWindow),
+      ),
+    [backtestWindow, stocks, strategies, technicalSignals, volumeSignals],
+  );
+  const sortedResults = useMemo(
+    () => [...results].sort((left, right) => right.alphaPct - left.alphaPct || right.returnPct - left.returnPct),
+    [results],
+  );
+  const selectedStrategy = strategies.find((strategy) => strategy.id === selectedStrategyId) ?? strategies[0];
+  const selectedResult = results.find((result) => result.strategyId === selectedStrategy?.id) ?? results[0];
+  const winningResult = sortedResults[0];
+  const comparisonResults = sortedResults.slice(0, 5);
+  const comparisonRows = useMemo(() => {
+    const source = comparisonResults[0]?.points ?? [];
+    return source.map((point, index) => {
+      const row: Record<string, string | number> = { date: point.date, SPY: point.spy };
+      comparisonResults.forEach((result) => {
+        row[result.strategyId] = result.points[index]?.value ?? 0;
+      });
+      return row;
+    });
+  }, [comparisonResults]);
+  const chartColors = ["#177e89", "#6d5bd0", "#c88a00", "#c2414b", "#5d6470"];
+
+  function updateStrategyWeights(key: TechnicalSignalKey, value: number) {
+    if (!selectedStrategy) {
+      return;
+    }
+    const now = new Date().toISOString();
+    setStrategies((current) =>
+      current.map((strategy) =>
+        strategy.id === selectedStrategy.id
+          ? {
+              ...strategy,
+              weights: { ...strategy.weights, [key]: Number.isFinite(value) ? value : 0 },
+              updatedAt: now,
+            }
+          : strategy,
+      ),
+    );
+  }
+
+  function addStrategyFromActiveWeights() {
+    const now = new Date().toISOString();
+    const name = newStrategyName.trim() || `Custom strategy ${strategies.length + 1}`;
+    const strategy: TradingStrategy = {
+      id: `custom-${Date.now()}`,
+      name,
+      description: "Custom strategy created from the currently active Settings weights.",
+      weights: loadSignalWeights(),
+      createdAt: now,
+      updatedAt: now,
+    };
+    setStrategies((current) => [...current, strategy]);
+    setSelectedStrategyId(strategy.id);
+    setNewStrategyName("");
+  }
+
+  function duplicateSelectedStrategy() {
+    if (!selectedStrategy) {
+      return;
+    }
+    const now = new Date().toISOString();
+    const copy: TradingStrategy = {
+      ...selectedStrategy,
+      id: `custom-${Date.now()}`,
+      name: `${selectedStrategy.name} copy`,
+      description: `Editable copy of ${selectedStrategy.name}.`,
+      weights: normalizeSignalWeights(selectedStrategy.weights),
+      createdAt: now,
+      updatedAt: now,
+    };
+    setStrategies((current) => [...current, copy]);
+    setSelectedStrategyId(copy.id);
+  }
+
+  function deleteSelectedStrategy() {
+    if (!selectedStrategy || strategies.length <= 1) {
+      return;
+    }
+    setStrategies((current) => current.filter((strategy) => strategy.id !== selectedStrategy.id));
+  }
+
+  function resetStrategyLibrary() {
+    const nextStrategies = starterStrategies();
+    setStrategies(nextStrategies);
+    setSelectedStrategyId(nextStrategies[0]?.id ?? "");
+  }
+
+  function applySelectedStrategy() {
+    if (!selectedStrategy) {
+      return;
+    }
+    saveSignalWeights(selectedStrategy.weights);
+    setAppliedStrategy(selectedStrategy.name);
+    window.setTimeout(() => setAppliedStrategy(""), 2400);
+  }
+
+  if (error) {
+    return (
+      <main className="page">
+        <section className="empty-state">
+          <h1>Strategy lab unavailable</h1>
+          <p>{error}</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!dataset || !selectedStrategy || !selectedResult) {
+    return (
+      <main className="page">
+        <section className="empty-state">
+          <h1>Loading strategies</h1>
+          <p>Reading cached market prices and preparing strategy simulations.</p>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="page strategies-page">
+      <header className="page-header">
+        <div>
+          <h1>Strategies</h1>
+          <p>
+            Compare signal-weight combinations against cached symbols · decisions use prior-day data and trade the next open.
+          </p>
+        </div>
+        <label className="compact-select">
+          Window
+          <select value={backtestWindow} onChange={(event) => setBacktestWindow(Number(event.target.value))}>
+            {[30, 60, 90, 180, 365].map((days) => (
+              <option key={days} value={days}>Last {days} days</option>
+            ))}
+          </select>
+        </label>
+      </header>
+
+      <section className="metrics-grid">
+        <Metric label="Best strategy" value={winningResult?.name ?? "--"} tone={(winningResult?.alphaPct ?? 0) >= 0 ? "good" : "warn"} />
+        <Metric label="Best return" value={`${winningResult?.returnPct.toFixed(2) ?? "0.00"}%`} tone={(winningResult?.returnPct ?? 0) >= 0 ? "good" : "warn"} />
+        <Metric label="Best alpha vs SPY" value={`${winningResult?.alphaPct >= 0 ? "+" : ""}${winningResult?.alphaPct.toFixed(2) ?? "0.00"}%`} tone={(winningResult?.alphaPct ?? 0) >= 0 ? "good" : "warn"} />
+        <Metric label="Simulated symbols" value={`${stocks.filter((stock) => stock.symbol !== "SPY").length}`} />
+      </section>
+
+      <section className="strategy-layout">
+        <div className="panel strategy-list-panel">
+          <div className="panel-head">
+            <div>
+              <h2>Strategy library</h2>
+              <span className="table-sort-summary">each strategy is a full signal-weight profile</span>
+            </div>
+          </div>
+          <div className="strategy-create-row">
+            <input value={newStrategyName} onChange={(event) => setNewStrategyName(event.target.value)} placeholder="New strategy name" />
+            <button className="primary-action compact" onClick={addStrategyFromActiveWeights}>+ Add</button>
+          </div>
+          <div className="strategy-list">
+            {strategies.map((strategy) => {
+              const result = results.find((item) => item.strategyId === strategy.id);
+              return (
+                <button
+                  key={strategy.id}
+                  className={strategy.id === selectedStrategy.id ? "strategy-list-item active" : "strategy-list-item"}
+                  onClick={() => setSelectedStrategyId(strategy.id)}
+                >
+                  <span>
+                    <strong>{strategy.name}</strong>
+                    <small>{strategy.description}</small>
+                  </span>
+                  <b className={(result?.alphaPct ?? 0) >= 0 ? "positive" : "negative"}>
+                    {result ? `${result.alphaPct >= 0 ? "+" : ""}${result.alphaPct.toFixed(2)}% alpha` : "--"}
+                  </b>
+                </button>
+              );
+            })}
+          </div>
+          <div className="strategy-actions">
+            <button className="text-button" onClick={duplicateSelectedStrategy}>Duplicate</button>
+            <button className="text-button" onClick={deleteSelectedStrategy} disabled={strategies.length <= 1}>Delete</button>
+            <button className="text-button" onClick={resetStrategyLibrary}>Reset starters</button>
+          </div>
+        </div>
+
+        <div className="panel strategy-results-panel">
+          <div className="panel-head">
+            <div>
+              <h2>Strategy comparison</h2>
+              <span className="table-sort-summary">top 5 by alpha vs SPY over selected window</span>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={comparisonRows}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="date" minTickGap={28} />
+              <YAxis tickFormatter={(value) => `$${Math.round(Number(value) / 1000)}k`} width={54} />
+              <Tooltip formatter={(value) => currency.format(Number(value))} />
+              <Line type="monotone" dataKey="SPY" stroke="#20242b" strokeWidth={2} strokeDasharray="5 5" dot={false} isAnimationActive={false} />
+              {comparisonResults.map((result, index) => (
+                <Line
+                  key={result.strategyId}
+                  type="monotone"
+                  dataKey={result.strategyId}
+                  name={result.name}
+                  stroke={chartColors[index % chartColors.length]}
+                  strokeWidth={2.4}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+          <div className="table-wrap strategy-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Strategy</th>
+                  <th>Return</th>
+                  <th>SPY</th>
+                  <th>Alpha</th>
+                  <th>Max drawdown</th>
+                  <th>Win rate</th>
+                  <th>Trades</th>
+                  <th>Open positions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedResults.map((result) => (
+                  <tr
+                    key={result.strategyId}
+                    className={result.strategyId === selectedStrategy.id ? "selected-row" : ""}
+                    onClick={() => setSelectedStrategyId(result.strategyId)}
+                  >
+                    <td><strong>{result.name}</strong></td>
+                    <td className={result.returnPct >= 0 ? "positive" : "negative"}>{result.returnPct >= 0 ? "+" : ""}{result.returnPct.toFixed(2)}%</td>
+                    <td className={result.spyReturnPct >= 0 ? "positive" : "negative"}>{result.spyReturnPct >= 0 ? "+" : ""}{result.spyReturnPct.toFixed(2)}%</td>
+                    <td className={result.alphaPct >= 0 ? "positive" : "negative"}>{result.alphaPct >= 0 ? "+" : ""}{result.alphaPct.toFixed(2)}%</td>
+                    <td>{result.maxDrawdownPct.toFixed(2)}%</td>
+                    <td>{result.winRate}%</td>
+                    <td>{result.trades} <small>({result.buys} buy / {result.sells} sell)</small></td>
+                    <td>{result.openPositions}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section className="strategy-layout strategy-detail-layout">
+        <div className="panel">
+          <div className="panel-head">
+            <div>
+              <h2>{selectedStrategy.name}</h2>
+              <span className="table-sort-summary">{selectedStrategy.description}</span>
+            </div>
+            <button className="primary-action compact" onClick={applySelectedStrategy}>
+              <Save size={18} />
+              Use in settings
+            </button>
+          </div>
+          {appliedStrategy && <p className="saved-state">{appliedStrategy} is now the active recommendation strategy.</p>}
+          <div className="strategy-result-cards">
+            <Metric label="Ending value" value={currency.format(selectedResult.endingValue)} tone={selectedResult.returnPct >= 0 ? "good" : "warn"} />
+            <Metric label="Strategy return" value={`${selectedResult.returnPct >= 0 ? "+" : ""}${selectedResult.returnPct.toFixed(2)}%`} tone={selectedResult.returnPct >= 0 ? "good" : "warn"} />
+            <Metric label="Alpha vs SPY" value={`${selectedResult.alphaPct >= 0 ? "+" : ""}${selectedResult.alphaPct.toFixed(2)}%`} tone={selectedResult.alphaPct >= 0 ? "good" : "warn"} />
+          </div>
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={selectedResult.points}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="date" minTickGap={28} />
+              <YAxis tickFormatter={(value) => `$${Math.round(Number(value) / 1000)}k`} width={54} />
+              <Tooltip formatter={(value) => currency.format(Number(value))} />
+              <Line type="monotone" dataKey="value" name={selectedStrategy.name} stroke="#177e89" strokeWidth={2.4} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="spy" name="SPY" stroke="#5d6470" strokeWidth={2} strokeDasharray="5 5" dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="panel strategy-weight-panel">
+          <div className="panel-head">
+            <div>
+              <h2>Signal weights</h2>
+              <span className="table-sort-summary">edit this strategy, then compare the simulated result</span>
+            </div>
+          </div>
+          <div className="table-wrap strategy-weight-table-wrap">
+            <table className="signal-weight-table">
+              <thead>
+                <tr>
+                  <th>Signal</th>
+                  <th>Weight</th>
+                  <th>Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                {TECHNICAL_SIGNAL_DEFINITIONS.map((definition) => (
+                  <tr key={definition.key}>
+                    <td>
+                      <strong>{definition.label}</strong>
+                      <small>{definition.decision}</small>
+                    </td>
+                    <td>
+                      <input
+                        aria-label={`${definition.label} strategy weight`}
+                        type="number"
+                        min="-5"
+                        max="5"
+                        step="0.05"
+                        value={selectedStrategy.weights[definition.key]}
+                        onChange={(event) => updateStrategyWeights(definition.key, Number(event.target.value))}
+                      />
+                    </td>
+                    <td><span className="signal-type-pill">{definition.group}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function SettingsScreen({
   onSyncAlpacaData,
   syncState,
@@ -5296,6 +6068,7 @@ export function App() {
     >
       {screen === "stocks" && <StocksScreen />}
       {screen === "portfolio" && <PortfolioScreen />}
+      {screen === "strategies" && <StrategiesScreen />}
       {screen === "settings" && (
         <SettingsScreen
           onSyncAlpacaData={runAlpacaDataSync}
