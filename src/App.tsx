@@ -4757,7 +4757,14 @@ function SettingsScreen({
         <div className="signal-weight-grid">
           {TECHNICAL_SIGNAL_DEFINITIONS.map((definition) => (
             <label key={definition.key}>
-              <span>{definition.label}</span>
+              <span className="signal-weight-title">
+                {definition.label}
+                <SignalInfoButton
+                  label={definition.label}
+                  description={definition.description}
+                  decision={definition.decision}
+                />
+              </span>
               <small>{definition.group}</small>
               <input
                 type="number"

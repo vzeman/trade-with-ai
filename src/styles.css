@@ -2608,6 +2608,13 @@ tbody tr.selected-row {
   font-weight: 850;
 }
 
+.signal-weight-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .signal-weight-grid small {
   color: #64707d;
   font-size: 11px;
