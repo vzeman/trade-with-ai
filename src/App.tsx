@@ -4754,34 +4754,46 @@ function SettingsScreen({
           </div>
           <SlidersHorizontal size={19} />
         </div>
-        <div className="signal-weight-grid">
-          {TECHNICAL_SIGNAL_DEFINITIONS.map((definition) => (
-            <label key={definition.key}>
-              <span className="signal-weight-title">
-                {definition.label}
-                <SignalInfoButton
-                  label={definition.label}
-                  description={definition.description}
-                  decision={definition.decision}
-                />
-              </span>
-              <small>{definition.group}</small>
-              <input
-                type="number"
-                min="-5"
-                max="5"
-                step="0.05"
-                value={signalWeights[definition.key]}
-                onChange={(event) => {
-                  const nextValue = Number(event.target.value);
-                  setSignalWeights((current) => ({
-                    ...current,
-                    [definition.key]: Number.isFinite(nextValue) ? nextValue : 0,
-                  }));
-                }}
-              />
-            </label>
-          ))}
+        <div className="table-wrap signal-weight-table-wrap">
+          <table className="signal-weight-table">
+            <thead>
+              <tr>
+                <th>Signal</th>
+                <th>Weight</th>
+                <th>Description</th>
+                <th>Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TECHNICAL_SIGNAL_DEFINITIONS.map((definition) => (
+                <tr key={definition.key}>
+                  <td>
+                    <strong>{definition.label}</strong>
+                    <small>{definition.decision}</small>
+                  </td>
+                  <td>
+                    <input
+                      aria-label={`${definition.label} weight`}
+                      type="number"
+                      min="-5"
+                      max="5"
+                      step="0.05"
+                      value={signalWeights[definition.key]}
+                      onChange={(event) => {
+                        const nextValue = Number(event.target.value);
+                        setSignalWeights((current) => ({
+                          ...current,
+                          [definition.key]: Number.isFinite(nextValue) ? nextValue : 0,
+                        }));
+                      }}
+                    />
+                  </td>
+                  <td>{definition.description}</td>
+                  <td><span className="signal-type-pill">{definition.group}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
         <div className="settings-actions">
           <button className="primary-action compact" onClick={saveWeights}>

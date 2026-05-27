@@ -2586,43 +2586,64 @@ tbody tr.selected-row {
   max-width: 1120px;
 }
 
-.signal-weight-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.signal-weight-grid label {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
+.signal-weight-table-wrap {
+  max-height: 620px;
   border: 1px solid #edf0f3;
   border-radius: 8px;
-  background: #fbfcfd;
-  padding: 10px;
 }
 
-.signal-weight-grid span {
+.signal-weight-table {
+  min-width: 920px;
+}
+
+.signal-weight-table thead th {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  background: #ffffff;
+  box-shadow: 0 1px 0 #edf0f3;
+}
+
+.signal-weight-table td {
+  vertical-align: top;
+}
+
+.signal-weight-table td:first-child {
+  min-width: 220px;
+}
+
+.signal-weight-table strong {
+  display: block;
   color: #17202a;
   font-size: 13px;
-  font-weight: 850;
 }
 
-.signal-weight-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.signal-weight-grid small {
+.signal-weight-table small {
+  display: block;
+  max-width: 420px;
+  margin-top: 5px;
   color: #64707d;
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.4;
 }
 
-.signal-weight-grid input {
+.signal-weight-table input {
+  width: 96px;
   min-height: 34px;
+}
+
+.signal-type-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 6px;
+  background: #eef2f5;
+  color: #53606d;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
 }
 
 .settings-actions {
@@ -2758,7 +2779,6 @@ tbody tr.selected-row {
   .balances-tables,
   .recommended-trades-grid,
   .form-grid,
-  .signal-weight-grid,
   .technical-signal-grid,
   .stock-filter-bar,
   .transaction-form,
