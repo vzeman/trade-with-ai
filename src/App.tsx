@@ -975,8 +975,16 @@ async function loadVolumeStateRiskSignals(): Promise<VolumeStateRiskSignal[]> {
   if (!response.ok) {
     return [];
   }
-  const payload = (await response.json()) as { rows?: VolumeStateRiskSignal[] };
-  return payload.rows ?? [];
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("json")) {
+    return [];
+  }
+  try {
+    const payload = (await response.json()) as { rows?: VolumeStateRiskSignal[] };
+    return payload.rows ?? [];
+  } catch {
+    return [];
+  }
 }
 
 async function loadIntradayCandles(symbol: string, cacheVersion = 0): Promise<IntradayCachePayload | null> {
@@ -985,7 +993,15 @@ async function loadIntradayCandles(symbol: string, cacheVersion = 0): Promise<In
   if (!response.ok) {
     return null;
   }
-  return response.json() as Promise<IntradayCachePayload>;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("json")) {
+    return null;
+  }
+  try {
+    return (await response.json()) as IntradayCachePayload;
+  } catch {
+    return null;
+  }
 }
 
 function latestVolumeStateSignal(signals: VolumeStateRiskSignal[], date: string): VolumeStateRiskSignal | null {

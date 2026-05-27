@@ -34,9 +34,17 @@ export type MarketDataset = {
 export async function loadMarketDataset(): Promise<MarketDataset> {
   const response = await fetch("/data/market-cache.json");
   if (!response.ok) {
-    throw new Error(`Market cache request failed: ${response.status}`);
+    throw new Error("Market cache is missing. Add market-cache.json to public/data for local dev, or data for Docker.");
   }
-  return response.json() as Promise<MarketDataset>;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("json")) {
+    throw new Error("Market cache is missing or not JSON. Add market-cache.json to public/data for local dev, or data for Docker.");
+  }
+  try {
+    return (await response.json()) as MarketDataset;
+  } catch {
+    throw new Error("Market cache JSON is invalid. Regenerate public/data/market-cache.json.");
+  }
 }
 
 export function classifyMarketState(candles: Candle[], lookbackDays: number): { marketState: MarketState; trendReturn: number } {
