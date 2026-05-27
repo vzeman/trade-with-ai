@@ -50,6 +50,7 @@ import {
 
 type Screen = "stocks" | "portfolio" | "strategies" | "settings";
 type ChartMode = "price" | "candles" | "volume" | "returns";
+type BrokerDriver = "alpaca" | "interactive-brokers";
 type StrategyUniverseMode =
   | "all"
   | "top10-volume"
@@ -522,6 +523,22 @@ type AlpacaCredentials = {
   apiKey: string;
   secret: string;
   accountId?: string;
+};
+
+type ManagedPortfolio = {
+  id: string;
+  name: string;
+  driver: BrokerDriver;
+  createdAt: string;
+  updatedAt: string;
+  alpaca?: Partial<AlpacaCredentials>;
+  interactiveBrokers?: {
+    host: string;
+    port: string;
+    clientId: string;
+    accountId?: string;
+    paper: boolean;
+  };
 };
 
 type AlpacaAccount = Record<string, string | number | boolean | null | undefined> & {
@@ -1149,6 +1166,111 @@ function loadStrategies(): TradingStrategy[] {
 
 function saveStrategies(strategies: TradingStrategy[]) {
   localStorage.setItem("trading_signal_strategies", JSON.stringify(strategies));
+}
+
+function brokerDriverLabel(driver: BrokerDriver) {
+  return driver === "interactive-brokers" ? "Interactive Brokers" : "Alpaca";
+}
+
+function defaultInteractiveBrokersConfig(): NonNullable<ManagedPortfolio["interactiveBrokers"]> {
+  return {
+    host: "127.0.0.1",
+    port: "7497",
+    clientId: "1",
+    accountId: "",
+    paper: true,
+  };
+}
+
+function newManagedPortfolio(name: string, driver: BrokerDriver = "alpaca"): ManagedPortfolio {
+  const now = new Date().toISOString();
+  return {
+    id: `portfolio-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    name,
+    driver,
+    createdAt: now,
+    updatedAt: now,
+    alpaca: driver === "alpaca" ? { endpoint: DEFAULT_ALPACA_ENDPOINT } : undefined,
+    interactiveBrokers: driver === "interactive-brokers" ? defaultInteractiveBrokersConfig() : undefined,
+  };
+}
+
+function defaultManagedPortfolios(): ManagedPortfolio[] {
+  const now = new Date().toISOString();
+  const legacyPaper = localStorage.getItem("alpaca_paper") !== "false";
+  const endpoint = (localStorage.getItem("alpaca_endpoint")?.trim() || (legacyPaper ? DEFAULT_ALPACA_ENDPOINT : LIVE_ALPACA_ENDPOINT)).replace(/\/+$/, "");
+  return [
+    {
+      id: "alpaca-paper",
+      name: "Alpaca Paper",
+      driver: "alpaca",
+      createdAt: now,
+      updatedAt: now,
+      alpaca: {
+        endpoint,
+        apiKey: localStorage.getItem("alpaca_api_key")?.trim() || "",
+        secret: localStorage.getItem("alpaca_secret_key")?.trim() || "",
+        accountId: localStorage.getItem("alpaca_account_id")?.trim() || "",
+      },
+    },
+  ];
+}
+
+function normalizeManagedPortfolio(portfolio: ManagedPortfolio): ManagedPortfolio {
+  return {
+    ...portfolio,
+    id: portfolio.id || `portfolio-${Date.now()}`,
+    name: portfolio.name || brokerDriverLabel(portfolio.driver),
+    driver: portfolio.driver === "interactive-brokers" ? "interactive-brokers" : "alpaca",
+    createdAt: portfolio.createdAt || new Date().toISOString(),
+    updatedAt: portfolio.updatedAt || new Date().toISOString(),
+    alpaca: {
+      endpoint: portfolio.alpaca?.endpoint || DEFAULT_ALPACA_ENDPOINT,
+      apiKey: portfolio.alpaca?.apiKey || "",
+      secret: portfolio.alpaca?.secret || "",
+      accountId: portfolio.alpaca?.accountId || "",
+    },
+    interactiveBrokers: {
+      ...defaultInteractiveBrokersConfig(),
+      ...(portfolio.interactiveBrokers ?? {}),
+    },
+  };
+}
+
+function loadManagedPortfolios(): ManagedPortfolio[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem("managed_portfolios") ?? "[]") as ManagedPortfolio[];
+    if (Array.isArray(parsed) && parsed.length) {
+      return parsed.map(normalizeManagedPortfolio);
+    }
+  } catch {
+    // Fall through to migrated default.
+  }
+  const portfolios = defaultManagedPortfolios();
+  saveManagedPortfolios(portfolios);
+  return portfolios;
+}
+
+function saveManagedPortfolios(portfolios: ManagedPortfolio[]) {
+  localStorage.setItem("managed_portfolios", JSON.stringify(portfolios));
+}
+
+function alpacaCredentialsForPortfolio(portfolio: ManagedPortfolio | null | undefined): AlpacaCredentials | null {
+  if (!portfolio || portfolio.driver !== "alpaca") {
+    return null;
+  }
+  const endpoint = (portfolio.alpaca?.endpoint?.trim() || DEFAULT_ALPACA_ENDPOINT).replace(/\/+$/, "");
+  const apiKey = portfolio.alpaca?.apiKey?.trim() ?? "";
+  const secret = portfolio.alpaca?.secret?.trim() ?? "";
+  if (!apiKey || !secret) {
+    return null;
+  }
+  return {
+    endpoint,
+    apiKey,
+    secret,
+    accountId: portfolio.alpaca?.accountId?.trim() || undefined,
+  };
 }
 
 function stateRank(state: MarketState) {
@@ -2261,8 +2383,8 @@ function alpacaUrl(credentials: AlpacaCredentials, path: string) {
   return `${base}${normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`}`;
 }
 
-async function alpacaRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const credentials = getAlpacaCredentials();
+async function alpacaRequest<T>(path: string, options: RequestInit = {}, credentialsOverride?: AlpacaCredentials | null): Promise<T> {
+  const credentials = credentialsOverride ?? getAlpacaCredentials();
   if (!credentials) {
     throw new Error("Configure Alpaca API key and secret in Settings first.");
   }
@@ -2289,13 +2411,13 @@ async function alpacaRequest<T>(path: string, options: RequestInit = {}): Promis
   return response.json() as Promise<T>;
 }
 
-async function loadAlpacaPortfolio(): Promise<AlpacaPortfolioData> {
+async function loadAlpacaPortfolio(credentialsOverride?: AlpacaCredentials | null): Promise<AlpacaPortfolioData> {
   const [account, positions, history, orders, activities] = await Promise.all([
-    alpacaRequest<AlpacaAccount>("/v2/account"),
-    alpacaRequest<AlpacaPosition[]>("/v2/positions"),
-    alpacaRequest<AlpacaPortfolioHistory>("/v2/account/portfolio/history?period=1A&timeframe=1D"),
-    alpacaRequest<AlpacaOrder[]>("/v2/orders?status=all&limit=100&direction=desc"),
-    alpacaRequest<AlpacaActivity[]>("/v2/account/activities?direction=desc&page_size=100"),
+    alpacaRequest<AlpacaAccount>("/v2/account", {}, credentialsOverride),
+    alpacaRequest<AlpacaPosition[]>("/v2/positions", {}, credentialsOverride),
+    alpacaRequest<AlpacaPortfolioHistory>("/v2/account/portfolio/history?period=1A&timeframe=1D", {}, credentialsOverride),
+    alpacaRequest<AlpacaOrder[]>("/v2/orders?status=all&limit=100&direction=desc", {}, credentialsOverride),
+    alpacaRequest<AlpacaActivity[]>("/v2/account/activities?direction=desc&page_size=100", {}, credentialsOverride),
   ]);
   return { account, positions, history, orders, activities };
 }
@@ -2323,21 +2445,21 @@ async function syncIntradayMinuteCache(symbols: string[], feed: MinuteSyncFeed):
   return payload;
 }
 
-async function submitAlpacaOrder(order: AlpacaOrderRequest) {
+async function submitAlpacaOrder(order: AlpacaOrderRequest, credentialsOverride?: AlpacaCredentials | null) {
   return alpacaRequest<AlpacaOrder>("/v2/orders", {
     method: "POST",
     body: JSON.stringify(order),
-  });
+  }, credentialsOverride);
 }
 
-async function submitAlpacaMarketOrder(symbol: string, side: "buy" | "sell", qty: number) {
+async function submitAlpacaMarketOrder(symbol: string, side: "buy" | "sell", qty: number, credentialsOverride?: AlpacaCredentials | null) {
   return submitAlpacaOrder({
     symbol,
     qty: String(Math.max(1, Math.floor(qty))),
     side,
     type: "market",
     time_in_force: "day",
-  });
+  }, credentialsOverride);
 }
 
 function orderDate(order: AlpacaOrder) {
@@ -3950,6 +4072,10 @@ function AppShell({
   user,
   syncState,
   syncMessage,
+  portfolios,
+  activePortfolioId,
+  onSelectPortfolio,
+  onAddPortfolio,
 }: {
   screen: Screen;
   setScreen: (screen: Screen) => void;
@@ -3958,6 +4084,10 @@ function AppShell({
   user: string;
   syncState: SyncState;
   syncMessage: string;
+  portfolios: ManagedPortfolio[];
+  activePortfolioId: string;
+  onSelectPortfolio: (portfolioId: string) => void;
+  onAddPortfolio: () => void;
 }) {
   return (
     <div className="app-shell">
@@ -3979,8 +4109,26 @@ function AppShell({
           </button>
           <button className={screen === "portfolio" ? "active" : ""} onClick={() => setScreen("portfolio")}>
             <Wallet size={18} />
-            Portfolio
+            Portfolios
           </button>
+          <div className="portfolio-submenu" aria-label="Portfolios">
+            {portfolios.map((portfolio) => (
+              <button
+                key={portfolio.id}
+                className={screen === "portfolio" && activePortfolioId === portfolio.id ? "active" : ""}
+                onClick={() => {
+                  onSelectPortfolio(portfolio.id);
+                  setScreen("portfolio");
+                }}
+              >
+                <span>{portfolio.name}</span>
+                <small>{brokerDriverLabel(portfolio.driver)}</small>
+              </button>
+            ))}
+            <button className="portfolio-add-button" onClick={onAddPortfolio}>
+              + Add portfolio
+            </button>
+          </div>
           <button className={screen === "strategies" ? "active" : ""} onClick={() => setScreen("strategies")}>
             <SlidersHorizontal size={18} />
             Strategies
@@ -4882,7 +5030,21 @@ function StocksScreen() {
   );
 }
 
-function PortfolioScreen() {
+function PortfolioScreen({
+  portfolio,
+  portfolios,
+  onSavePortfolio,
+  onAddPortfolio,
+  onDeletePortfolio,
+  onSelectPortfolio,
+}: {
+  portfolio: ManagedPortfolio;
+  portfolios: ManagedPortfolio[];
+  onSavePortfolio: (portfolio: ManagedPortfolio) => void;
+  onAddPortfolio: () => void;
+  onDeletePortfolio: (portfolioId: string) => void;
+  onSelectPortfolio: (portfolioId: string) => void;
+}) {
   const [dataset, setDataset] = useState<MarketDataset | null>(null);
   const [alpacaData, setAlpacaData] = useState<AlpacaPortfolioData | null>(null);
   const [volumeSignals, setVolumeSignals] = useState<VolumeStateRiskSignal[]>([]);
@@ -4921,6 +5083,7 @@ function PortfolioScreen() {
   const [selectedPortfolioSymbol, setSelectedPortfolioSymbol] = useState("NVDA");
   const [recommendedTradeCount, setRecommendedTradeCount] = useState(3);
   const [portfolioView, setPortfolioView] = useState<PortfolioView>("overview");
+  const [portfolioDraft, setPortfolioDraft] = useState<ManagedPortfolio>(() => normalizeManagedPortfolio(portfolio));
   const signalWeights = useMemo(() => loadSignalWeights(), []);
   const stocks = useMemo(() => applyStateLookback(dataset?.symbols ?? [], DEFAULT_STATE_LOOKBACK), [dataset]);
   const technicalSignals = useMemo(() => (dataset ? buildCachedTechnicalSignals(dataset) : null), [dataset]);
@@ -4963,7 +5126,8 @@ function PortfolioScreen() {
     () => buildPortfolioProfitLossPeriods(stocks, alpacaData?.positions ?? [], orders, activities, alpacaData?.account ?? null),
     [activities, alpacaData, orders, stocks],
   );
-  const credentialsConfigured = Boolean(getAlpacaCredentials());
+  const brokerCredentials = useMemo(() => alpacaCredentialsForPortfolio(portfolio), [portfolio]);
+  const credentialsConfigured = portfolio.driver === "alpaca" ? Boolean(brokerCredentials) : false;
   const recommendedTrades = useMemo(
     () => buildRecommendedPortfolioTrades(stocks, recommendations, holdings, currentCash, recommendedTradeCount),
     [currentCash, holdings, recommendations, recommendedTradeCount, stocks],
@@ -4977,19 +5141,30 @@ function PortfolioScreen() {
   const detailAggregation = autoChartAggregation(stockDetailVisibleTimeframe);
 
   useEffect(() => {
+    setPortfolioDraft(normalizeManagedPortfolio(portfolio));
+    setAlpacaData(null);
+    setAlpacaError("");
+  }, [portfolio]);
+
+  useEffect(() => {
     localStorage.removeItem("portfolio_transactions");
     localStorage.removeItem("portfolio_starting_cash");
   }, []);
 
   function refreshAlpacaPortfolio() {
-    if (!getAlpacaCredentials()) {
+    if (portfolio.driver !== "alpaca") {
       setAlpacaData(null);
-      setAlpacaError("Configure Alpaca API key and secret in Settings to load live portfolio data.");
+      setAlpacaError(`${brokerDriverLabel(portfolio.driver)} trading connector is configured, but live API loading is not implemented yet.`);
+      return Promise.resolve();
+    }
+    if (!brokerCredentials) {
+      setAlpacaData(null);
+      setAlpacaError("Configure this portfolio's Alpaca API key and secret to load live portfolio data.");
       return Promise.resolve();
     }
     setAlpacaLoading(true);
     setAlpacaError("");
-    return loadAlpacaPortfolio()
+    return loadAlpacaPortfolio(brokerCredentials)
       .then((nextPortfolio) => {
         setAlpacaData(nextPortfolio);
       })
@@ -5015,7 +5190,7 @@ function PortfolioScreen() {
         setTransactionSymbol(defaultStock?.symbol ?? "");
         setSelectedPortfolioSymbol(defaultStock?.symbol ?? "");
         setTransactionPrice(defaultStock ? latestClose(defaultStock) : 0);
-        refreshAlpacaPortfolio();
+        void refreshAlpacaPortfolio();
       })
       .catch((loadError: Error) => {
         if (!cancelled) {
@@ -5035,17 +5210,13 @@ function PortfolioScreen() {
         setAlpacaError("");
         return;
       }
-      if (detail?.error) {
-        setAlpacaError(detail.error);
-        return;
-      }
-      if (getAlpacaCredentials()) {
+      if (portfolio.driver === "alpaca" && brokerCredentials) {
         void refreshAlpacaPortfolio();
       }
     };
     window.addEventListener("alpaca-data-synced", listener);
     return () => window.removeEventListener("alpaca-data-synced", listener);
-  }, []);
+  }, [brokerCredentials, portfolio.driver]);
 
   useEffect(() => {
     const stock = stocks.find((item) => item.symbol === transactionSymbol);
@@ -5053,6 +5224,60 @@ function PortfolioScreen() {
       setTransactionPrice(Number(latestClose(stock).toFixed(2)));
     }
   }, [stocks, transactionPrice, transactionSymbol]);
+
+  useEffect(() => {
+    if (dataset) {
+      void refreshAlpacaPortfolio();
+    }
+  }, [brokerCredentials, dataset, portfolio.driver, portfolio.id]);
+
+  function updatePortfolioDraft(patch: Partial<ManagedPortfolio>) {
+    setPortfolioDraft((current) => ({
+      ...current,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  function updatePortfolioAlpaca(patch: Partial<AlpacaCredentials>) {
+    setPortfolioDraft((current) => ({
+      ...current,
+      alpaca: {
+        ...(current.alpaca ?? {}),
+        ...patch,
+      },
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  function updatePortfolioIbkr(patch: Partial<NonNullable<ManagedPortfolio["interactiveBrokers"]>>) {
+    setPortfolioDraft((current) => ({
+      ...current,
+      interactiveBrokers: {
+        ...defaultInteractiveBrokersConfig(),
+        ...(current.interactiveBrokers ?? {}),
+        ...patch,
+      },
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  function changePortfolioDriver(driver: BrokerDriver) {
+    setPortfolioDraft((current) => ({
+      ...current,
+      driver,
+      alpaca: driver === "alpaca" ? current.alpaca ?? { endpoint: DEFAULT_ALPACA_ENDPOINT } : current.alpaca,
+      interactiveBrokers:
+        driver === "interactive-brokers"
+          ? current.interactiveBrokers ?? defaultInteractiveBrokersConfig()
+          : current.interactiveBrokers,
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  function savePortfolioSettings() {
+    onSavePortfolio(normalizeManagedPortfolio(portfolioDraft));
+  }
 
   function buildOrderRequest(): AlpacaOrderRequest {
     const symbol = transactionSymbol.trim();
@@ -5124,10 +5349,14 @@ function PortfolioScreen() {
   }
 
   async function submitOrder() {
+    if (portfolio.driver !== "alpaca" || !brokerCredentials) {
+      setAlpacaError(`${brokerDriverLabel(portfolio.driver)} order submission is not connected yet.`);
+      return;
+    }
     setOrderSubmitting(true);
     setAlpacaError("");
     try {
-      await submitAlpacaOrder(buildOrderRequest());
+      await submitAlpacaOrder(buildOrderRequest(), brokerCredentials);
       setSelectedPortfolioSymbol(transactionSymbol);
       setTradeDialogOpen(false);
       await refreshAlpacaPortfolio();
@@ -5139,7 +5368,7 @@ function PortfolioScreen() {
   }
 
   async function submitRecommendedOrders() {
-    if (!recommendedTrades.length || !credentialsConfigured) {
+    if (!recommendedTrades.length || !credentialsConfigured || !brokerCredentials) {
       return;
     }
     setBulkOrderSubmitting(true);
@@ -5149,7 +5378,7 @@ function PortfolioScreen() {
     try {
       for (const trade of recommendedTrades) {
         try {
-          await submitAlpacaMarketOrder(trade.symbol, "buy", trade.shares);
+          await submitAlpacaMarketOrder(trade.symbol, "buy", trade.shares, brokerCredentials);
           placedCount += 1;
         } catch (submitError) {
           const reason = submitError instanceof Error ? submitError.message : "unknown error";
@@ -5206,10 +5435,109 @@ function PortfolioScreen() {
     <main className="page">
       <header className="page-header">
         <div>
-          <h1>Portfolio</h1>
-          <p>Live Alpaca account, positions, orders, and portfolio value through time.</p>
+          <h1>{portfolio.name}</h1>
+          <p>{brokerDriverLabel(portfolio.driver)} trading portfolio · Alpaca remains the global source for symbols and ticks.</p>
+        </div>
+        <div className="portfolio-header-actions">
+          <label className="compact-select">
+            Portfolio
+            <select value={portfolio.id} onChange={(event) => onSelectPortfolio(event.target.value)}>
+              {portfolios.map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+          </label>
+          <button className="primary-action compact" onClick={onAddPortfolio}>+ Add portfolio</button>
         </div>
       </header>
+
+      <section className="settings-panel portfolio-driver-panel">
+        <div className="panel-head">
+          <div>
+            <h2>Portfolio trading connector</h2>
+            <span className="table-sort-summary">market data stays global Alpaca; orders and balances use this portfolio driver</span>
+          </div>
+          <span className="signal-type-pill">{brokerDriverLabel(portfolioDraft.driver)}</span>
+        </div>
+        <div className="form-grid">
+          <label>
+            Portfolio name
+            <input value={portfolioDraft.name} onChange={(event) => updatePortfolioDraft({ name: event.target.value })} />
+          </label>
+          <label>
+            Trading driver
+            <select value={portfolioDraft.driver} onChange={(event) => changePortfolioDriver(event.target.value as BrokerDriver)}>
+              <option value="alpaca">Alpaca Trading</option>
+              <option value="interactive-brokers">Interactive Brokers</option>
+            </select>
+          </label>
+          {portfolioDraft.driver === "alpaca" && (
+            <>
+              <label className="endpoint-field">
+                Alpaca endpoint
+                <input
+                  value={portfolioDraft.alpaca?.endpoint ?? DEFAULT_ALPACA_ENDPOINT}
+                  onChange={(event) => updatePortfolioAlpaca({ endpoint: event.target.value })}
+                  placeholder="https://paper-api.alpaca.markets/v2"
+                />
+              </label>
+              <label>
+                API key
+                <input value={portfolioDraft.alpaca?.apiKey ?? ""} onChange={(event) => updatePortfolioAlpaca({ apiKey: event.target.value })} placeholder="PK..." />
+              </label>
+              <label>
+                Secret key
+                <input
+                  value={portfolioDraft.alpaca?.secret ?? ""}
+                  onChange={(event) => updatePortfolioAlpaca({ secret: event.target.value })}
+                  type="password"
+                  placeholder="••••••••"
+                />
+              </label>
+              <label>
+                Account ID
+                <input value={portfolioDraft.alpaca?.accountId ?? ""} onChange={(event) => updatePortfolioAlpaca({ accountId: event.target.value })} placeholder="optional" />
+              </label>
+            </>
+          )}
+          {portfolioDraft.driver === "interactive-brokers" && (
+            <>
+              <label>
+                TWS / Gateway host
+                <input value={portfolioDraft.interactiveBrokers?.host ?? "127.0.0.1"} onChange={(event) => updatePortfolioIbkr({ host: event.target.value })} />
+              </label>
+              <label>
+                Port
+                <input value={portfolioDraft.interactiveBrokers?.port ?? "7497"} onChange={(event) => updatePortfolioIbkr({ port: event.target.value })} />
+              </label>
+              <label>
+                Client ID
+                <input value={portfolioDraft.interactiveBrokers?.clientId ?? "1"} onChange={(event) => updatePortfolioIbkr({ clientId: event.target.value })} />
+              </label>
+              <label>
+                Account ID
+                <input value={portfolioDraft.interactiveBrokers?.accountId ?? ""} onChange={(event) => updatePortfolioIbkr({ accountId: event.target.value })} placeholder="optional" />
+              </label>
+              <label className="checkbox-field">
+                <input
+                  type="checkbox"
+                  checked={portfolioDraft.interactiveBrokers?.paper ?? true}
+                  onChange={(event) => updatePortfolioIbkr({ paper: event.target.checked })}
+                />
+                <span>Paper trading</span>
+              </label>
+            </>
+          )}
+        </div>
+        <div className="settings-actions">
+          <button className="primary-action compact" onClick={savePortfolioSettings}>
+            <Save size={18} />
+            Save portfolio
+          </button>
+          <button className="text-button" onClick={onAddPortfolio}>Add another</button>
+          <button className="text-button" onClick={() => onDeletePortfolio(portfolio.id)} disabled={portfolios.length <= 1}>Remove portfolio</button>
+        </div>
+      </section>
 
       {alpacaError && (
         <section className="alpaca-status-panel" aria-label="Alpaca portfolio status">
@@ -6258,13 +6586,13 @@ function SettingsScreen({
       <header className="page-header">
         <div>
           <h1>Settings</h1>
-          <p>Configure brokerage connectivity and account preferences.</p>
+          <p>Configure global Alpaca connectivity for symbols, daily bars, and minute tick cache.</p>
         </div>
       </header>
 
       <section className="settings-panel">
         <div className="panel-head">
-          <h2>Alpaca API</h2>
+          <h2>Global Alpaca market data API</h2>
           <KeyRound size={19} />
         </div>
         <div className="form-grid">
@@ -6278,7 +6606,7 @@ function SettingsScreen({
           </label>
           <label>
             Account ID
-            <input value={accountId} onChange={(event) => setAccountId(event.target.value)} placeholder="PA..." />
+            <input value={accountId} onChange={(event) => setAccountId(event.target.value)} placeholder="optional" />
           </label>
           <label>
             API key
@@ -6290,7 +6618,7 @@ function SettingsScreen({
           </label>
         </div>
         <p className="settings-note">
-          Use Alpaca Trading API base endpoint, for example {DEFAULT_ALPACA_ENDPOINT} for paper or {LIVE_ALPACA_ENDPOINT} for live.
+          These credentials are used for market data sync. Portfolio trading credentials are configured per portfolio.
         </p>
         <button className="primary-action compact" onClick={saveSettings}>
           <Save size={18} />
@@ -6370,9 +6698,48 @@ function SettingsScreen({
 export function App() {
   const [user, setUser] = useState(() => localStorage.getItem("portfolio_user") ?? "");
   const [screen, setScreen] = useState<Screen>("stocks");
+  const [portfolios, setPortfolios] = useState<ManagedPortfolio[]>(() => loadManagedPortfolios());
+  const [activePortfolioId, setActivePortfolioId] = useState(() => localStorage.getItem("active_portfolio_id") ?? loadManagedPortfolios()[0]?.id ?? "");
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const [syncMessage, setSyncMessage] = useState("Configure Alpaca in Settings to enable background sync.");
   const syncRunningRef = useRef(false);
+  const activePortfolio = portfolios.find((portfolio) => portfolio.id === activePortfolioId) ?? portfolios[0] ?? defaultManagedPortfolios()[0];
+
+  useEffect(() => {
+    saveManagedPortfolios(portfolios);
+    if (!portfolios.some((portfolio) => portfolio.id === activePortfolioId)) {
+      setActivePortfolioId(portfolios[0]?.id ?? "");
+    }
+  }, [activePortfolioId, portfolios]);
+
+  useEffect(() => {
+    if (activePortfolioId) {
+      localStorage.setItem("active_portfolio_id", activePortfolioId);
+    }
+  }, [activePortfolioId]);
+
+  function addPortfolio(driver: BrokerDriver = "alpaca") {
+    const nextPortfolio = newManagedPortfolio(driver === "alpaca" ? `Alpaca Portfolio ${portfolios.length + 1}` : `IBKR Portfolio ${portfolios.length + 1}`, driver);
+    setPortfolios((current) => [...current, nextPortfolio]);
+    setActivePortfolioId(nextPortfolio.id);
+    setScreen("portfolio");
+  }
+
+  function savePortfolio(nextPortfolio: ManagedPortfolio) {
+    const normalized = normalizeManagedPortfolio(nextPortfolio);
+    setPortfolios((current) => current.map((portfolio) => (portfolio.id === normalized.id ? normalized : portfolio)));
+    setActivePortfolioId(normalized.id);
+  }
+
+  function deletePortfolio(portfolioId: string) {
+    if (portfolios.length <= 1) {
+      return;
+    }
+    setPortfolios((current) => current.filter((portfolio) => portfolio.id !== portfolioId));
+    if (activePortfolioId === portfolioId) {
+      setActivePortfolioId(portfolios.find((portfolio) => portfolio.id !== portfolioId)?.id ?? "");
+    }
+  }
 
   async function runAlpacaDataSync(): Promise<AlpacaSyncSummary> {
     if (syncRunningRef.current) {
@@ -6386,24 +6753,16 @@ export function App() {
 
     syncRunningRef.current = true;
     setSyncState("syncing");
-    setSyncMessage("Syncing Alpaca portfolio and minute tick cache...");
+    setSyncMessage("Syncing Alpaca symbol and minute tick cache...");
 
     try {
       const dataset = await loadMarketDataset();
       const symbols = dataset.symbols.map((stock) => stock.symbol).filter(Boolean);
-      const [portfolioResult, intradayResult] = await Promise.allSettled([
-        loadAlpacaPortfolio(),
+      const [intradayResult] = await Promise.allSettled([
         syncIntradayMinuteCache(symbols, "iex"),
       ]);
       const errors: string[] = [];
       const summary: AlpacaSyncSummary = {};
-
-      if (portfolioResult.status === "fulfilled") {
-        summary.portfolioSynced = true;
-        summary.portfolio = portfolioResult.value;
-      } else {
-        errors.push(portfolioResult.reason instanceof Error ? portfolioResult.reason.message : String(portfolioResult.reason));
-      }
 
       if (intradayResult.status === "fulfilled") {
         summary.barsAdded = intradayResult.value.barsAdded ?? 0;
@@ -6419,7 +6778,7 @@ export function App() {
       } else {
         setSyncState("success");
         setSyncMessage(
-          `Synced portfolio and ${summary.symbolsSynced ?? 0} symbols, ${summary.barsAdded ?? 0} new minute bars.`,
+          `Synced ${summary.symbolsSynced ?? 0} symbols, ${summary.barsAdded ?? 0} new minute bars.`,
         );
       }
 
@@ -6466,13 +6825,26 @@ export function App() {
       user={user}
       syncState={syncState}
       syncMessage={syncMessage}
+      portfolios={portfolios}
+      activePortfolioId={activePortfolio.id}
+      onSelectPortfolio={setActivePortfolioId}
+      onAddPortfolio={() => addPortfolio()}
       onLogout={() => {
         localStorage.removeItem("portfolio_user");
         setUser("");
       }}
     >
       {screen === "stocks" && <StocksScreen />}
-      {screen === "portfolio" && <PortfolioScreen />}
+      {screen === "portfolio" && (
+        <PortfolioScreen
+          portfolio={activePortfolio}
+          portfolios={portfolios}
+          onSavePortfolio={savePortfolio}
+          onAddPortfolio={() => addPortfolio()}
+          onDeletePortfolio={deletePortfolio}
+          onSelectPortfolio={setActivePortfolioId}
+        />
+      )}
       {screen === "strategies" && <StrategiesScreen />}
       {screen === "settings" && (
         <SettingsScreen

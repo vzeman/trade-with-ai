@@ -251,6 +251,43 @@ select {
   color: #0f6670;
 }
 
+.portfolio-submenu {
+  display: grid;
+  gap: 5px;
+  margin: -2px 0 6px 26px;
+}
+
+.portfolio-submenu button {
+  min-height: 34px;
+  display: grid;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 10px;
+}
+
+.portfolio-submenu button span,
+.portfolio-submenu button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portfolio-submenu button span {
+  font-size: 13px;
+}
+
+.portfolio-submenu button small {
+  color: #7a8591;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.portfolio-submenu .portfolio-add-button {
+  justify-content: start;
+  color: #0f6670;
+  font-size: 12px;
+}
+
 .sidebar-footer {
   margin-top: auto;
   border-top: 1px solid #e7ebef;
@@ -347,6 +384,14 @@ select {
   display: flex;
   align-items: end;
   flex-wrap: wrap;
+  gap: 10px;
+}
+
+.portfolio-header-actions {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
 }
 
@@ -2796,8 +2841,14 @@ tbody tr.selected-row {
 .settings-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 14px;
+}
+
+.portfolio-driver-panel {
+  max-width: none;
+  margin-bottom: 18px;
 }
 
 .empty-state {
