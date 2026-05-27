@@ -169,6 +169,158 @@ const TECHNICAL_SIGNAL_DEFINITIONS = [
     description: "Compares the stock's 20-day return against SPY over the same period.",
     decision: "Positive relative strength means the stock is outperforming the market. Negative relative strength means capital may be better deployed elsewhere.",
   },
+  {
+    key: "goldenCross50_200",
+    label: "SMA 50/200 cross",
+    group: "Trend",
+    defaultWeight: 0.85,
+    description: "Compares the 50-day moving average with the long-term 200-day moving average.",
+    decision: "Positive values favor long-term trend following. Negative values warn that the stock is below its longer-term trend structure.",
+  },
+  {
+    key: "adxTrend",
+    label: "ADX trend strength",
+    group: "Trend",
+    defaultWeight: 0.7,
+    description: "Approximates ADX-style directional strength from recent directional movement and true range.",
+    decision: "A strong positive trend supports buy/hold. A strong negative trend supports caution or sell. Weak values mean the market is choppy.",
+  },
+  {
+    key: "cci20",
+    label: "CCI 20",
+    group: "Momentum",
+    defaultWeight: 0.6,
+    description: "Commodity Channel Index compares typical price with its recent average deviation.",
+    decision: "Positive CCI supports momentum. Very negative CCI warns of weakness, though it can also become a rebound setup with confirmation.",
+  },
+  {
+    key: "williamsR14",
+    label: "Williams %R 14",
+    group: "Momentum",
+    defaultWeight: 0.55,
+    description: "Shows where the close sits inside the recent 14-day high-low range on a -100 to 0 scale.",
+    decision: "Near zero means price is closing near highs. Deeply negative values show weakness or possible oversold conditions.",
+  },
+  {
+    key: "mfi14",
+    label: "MFI 14",
+    group: "Volume",
+    defaultWeight: 0.65,
+    description: "Money Flow Index is RSI-like momentum that includes both price and volume.",
+    decision: "Rising MFI supports accumulation. Very high MFI can be crowded; very low MFI can be a risky rebound candidate.",
+  },
+  {
+    key: "chaikinMoneyFlow20",
+    label: "Chaikin money flow 20",
+    group: "Volume",
+    defaultWeight: 0.7,
+    description: "Measures whether volume is flowing into closes near the top or bottom of each daily range.",
+    decision: "Positive CMF suggests accumulation. Negative CMF suggests distribution and weak sponsorship.",
+  },
+  {
+    key: "accumulationDistributionTrend",
+    label: "A/D line trend",
+    group: "Volume",
+    defaultWeight: 0.6,
+    description: "Tracks the accumulation/distribution line and compares its short trend with its medium trend.",
+    decision: "Positive A/D trend means volume-adjusted closes are improving. Negative trend warns that sellers may be quietly dominating.",
+  },
+  {
+    key: "keltner20",
+    label: "Keltner position",
+    group: "Volatility",
+    defaultWeight: 0.55,
+    description: "Compares price with an EMA channel based on ATR volatility.",
+    decision: "Above the channel can confirm trend strength but may be stretched. Below the channel warns of downside pressure.",
+  },
+  {
+    key: "donchian55",
+    label: "Donchian 55 position",
+    group: "Breakout",
+    defaultWeight: 0.8,
+    description: "Shows where price is inside the 55-day breakout range.",
+    decision: "Near the range high supports trend breakout logic. Near the range low warns that the stock is not leading.",
+  },
+  {
+    key: "squeeze20",
+    label: "Volatility squeeze",
+    group: "Volatility",
+    defaultWeight: 0.45,
+    description: "Measures Bollinger bandwidth to identify compressed volatility before possible expansion.",
+    decision: "A squeeze with positive momentum can favor an upside breakout. A squeeze with negative momentum warns of downside expansion.",
+  },
+  {
+    key: "choppiness14",
+    label: "Choppiness 14",
+    group: "Regime",
+    defaultWeight: 0.55,
+    description: "Estimates whether recent movement is directional or noisy and range-bound.",
+    decision: "Lower choppiness is better for trend trades. High choppiness favors smaller size or waiting.",
+  },
+  {
+    key: "downsideVolatility20",
+    label: "Downside volatility",
+    group: "Risk",
+    defaultWeight: 0.7,
+    description: "Measures volatility from negative-return days over the recent window.",
+    decision: "Low downside volatility supports holding. High downside volatility means stops and position size matter more.",
+  },
+  {
+    key: "betaSpy60",
+    label: "Beta vs SPY 60",
+    group: "Relative",
+    defaultWeight: 0.5,
+    description: "Estimates how sensitive the stock is to SPY over roughly 60 trading days.",
+    decision: "Lower or moderate beta can reduce portfolio risk. Very high beta needs stronger conviction and smaller sizing.",
+  },
+  {
+    key: "correlationSpy60",
+    label: "Correlation vs SPY",
+    group: "Relative",
+    defaultWeight: 0.45,
+    description: "Measures how closely the stock has moved with SPY recently.",
+    decision: "High correlation helps in strong markets. In weak markets, lower correlation can be more defensive.",
+  },
+  {
+    key: "dollarVolumeTrend",
+    label: "Dollar volume trend",
+    group: "Liquidity",
+    defaultWeight: 0.55,
+    description: "Compares recent traded dollar volume with its 20-day baseline.",
+    decision: "Expanding dollar volume on up moves confirms participation. Expanding dollar volume on down moves is a warning.",
+  },
+  {
+    key: "supportDistance20",
+    label: "Distance from support",
+    group: "Support/resistance",
+    defaultWeight: 0.45,
+    description: "Measures how far price is above the recent 20-day low support area.",
+    decision: "A healthy distance above support confirms recovery. Too close to support means the stock can break down quickly.",
+  },
+  {
+    key: "resistanceDistance20",
+    label: "Distance to resistance",
+    group: "Support/resistance",
+    defaultWeight: 0.55,
+    description: "Measures how far price is below the recent 20-day high resistance area.",
+    decision: "Small distance to resistance supports breakout watchlists. Large distance means price is still far from proving strength.",
+  },
+  {
+    key: "high52wDistance",
+    label: "Distance from 52w high",
+    group: "Positioning",
+    defaultWeight: 0.65,
+    description: "Measures how far price is below the highest high of the last year.",
+    decision: "Stocks near 52-week highs often lead in momentum regimes. Deep discounts need stronger reversal evidence.",
+  },
+  {
+    key: "low52wRebound",
+    label: "Rebound from 52w low",
+    group: "Positioning",
+    defaultWeight: 0.45,
+    description: "Measures how much the stock has recovered from its lowest low of the last year.",
+    decision: "A meaningful rebound shows buyers have stepped in. A stock near yearly lows is usually lower quality for long trades.",
+  },
 ] as const;
 const VISIBLE_TIMEFRAME_OPTIONS = [
   { id: "2h", label: "2h", days: 1 },
@@ -745,6 +897,132 @@ function lowestLow(candles: Candle[], index: number, window: number) {
   return Math.min(...windowSlice(candles, index, window).map((candle) => candle.low));
 }
 
+function trueRangeAt(candles: Candle[], index: number) {
+  const candle = candles[index];
+  if (!candle) {
+    return 0;
+  }
+  const previousClose = candles[index - 1]?.close ?? candle.close;
+  return Math.max(candle.high - candle.low, Math.abs(candle.high - previousClose), Math.abs(candle.low - previousClose));
+}
+
+function simpleReturns(candles: Candle[], index: number, window: number) {
+  const start = Math.max(1, index - window + 1);
+  const returns: number[] = [];
+  for (let cursor = start; cursor <= index; cursor += 1) {
+    const previous = candles[cursor - 1];
+    const current = candles[cursor];
+    if (previous?.close && current?.close) {
+      returns.push(current.close / previous.close - 1);
+    }
+  }
+  return returns;
+}
+
+function covariance(left: number[], right: number[]) {
+  const length = Math.min(left.length, right.length);
+  if (length < 2) {
+    return 0;
+  }
+  const leftRows = left.slice(left.length - length);
+  const rightRows = right.slice(right.length - length);
+  const leftAverage = average(leftRows);
+  const rightAverage = average(rightRows);
+  return leftRows.reduce((sum, value, index) => sum + (value - leftAverage) * (rightRows[index] - rightAverage), 0) / length;
+}
+
+function correlation(left: number[], right: number[]) {
+  const length = Math.min(left.length, right.length);
+  if (length < 2) {
+    return 0;
+  }
+  const leftRows = left.slice(left.length - length);
+  const rightRows = right.slice(right.length - length);
+  const denominator = standardDeviation(leftRows) * standardDeviation(rightRows);
+  return denominator ? covariance(leftRows, rightRows) / denominator : 0;
+}
+
+function directionalTrendAt(candles: Candle[], index: number, window = 14) {
+  const start = Math.max(1, index - window + 1);
+  let plusDm = 0;
+  let minusDm = 0;
+  let range = 0;
+  for (let cursor = start; cursor <= index; cursor += 1) {
+    const previous = candles[cursor - 1];
+    const current = candles[cursor];
+    if (!previous || !current) {
+      continue;
+    }
+    const upMove = current.high - previous.high;
+    const downMove = previous.low - current.low;
+    plusDm += upMove > downMove && upMove > 0 ? upMove : 0;
+    minusDm += downMove > upMove && downMove > 0 ? downMove : 0;
+    range += trueRangeAt(candles, cursor);
+  }
+  const plusDi = range ? (plusDm / range) * 100 : 0;
+  const minusDi = range ? (minusDm / range) * 100 : 0;
+  const direction = plusDi - minusDi;
+  const strength = plusDi + minusDi ? (Math.abs(direction) / (plusDi + minusDi)) * 100 : 0;
+  return direction >= 0 ? strength : -strength;
+}
+
+function cciAt(candles: Candle[], index: number, window = 20) {
+  const rows = windowSlice(candles, index, window);
+  const typicalPrices = rows.map((candle) => (candle.high + candle.low + candle.close) / 3);
+  const currentTypical = typicalPrices[typicalPrices.length - 1] ?? 0;
+  const typicalAverage = average(typicalPrices);
+  const meanDeviation = average(typicalPrices.map((value) => Math.abs(value - typicalAverage)));
+  return meanDeviation ? (currentTypical - typicalAverage) / (0.015 * meanDeviation) : 0;
+}
+
+function moneyFlowIndexAt(candles: Candle[], index: number, window = 14) {
+  const start = Math.max(1, index - window + 1);
+  let positive = 0;
+  let negative = 0;
+  for (let cursor = start; cursor <= index; cursor += 1) {
+    const previous = candles[cursor - 1];
+    const current = candles[cursor];
+    if (!previous || !current) {
+      continue;
+    }
+    const previousTypical = (previous.high + previous.low + previous.close) / 3;
+    const currentTypical = (current.high + current.low + current.close) / 3;
+    const rawFlow = currentTypical * current.volume;
+    if (currentTypical > previousTypical) {
+      positive += rawFlow;
+    } else if (currentTypical < previousTypical) {
+      negative += rawFlow;
+    }
+  }
+  if (!negative) {
+    return positive ? 100 : 50;
+  }
+  return 100 - 100 / (1 + positive / negative);
+}
+
+function chaikinMoneyFlowAt(candles: Candle[], index: number, window = 20) {
+  const rows = windowSlice(candles, index, window);
+  const moneyVolume = rows.reduce((sum, candle) => {
+    const range = candle.high - candle.low;
+    const multiplier = range ? ((candle.close - candle.low) - (candle.high - candle.close)) / range : 0;
+    return sum + multiplier * candle.volume;
+  }, 0);
+  const volume = rows.reduce((sum, candle) => sum + candle.volume, 0);
+  return volume ? moneyVolume / volume : 0;
+}
+
+function choppinessAt(candles: Candle[], index: number, window = 14) {
+  const rows = windowSlice(candles, index, window);
+  if (rows.length < 2) {
+    return 50;
+  }
+  const high = Math.max(...rows.map((candle) => candle.high));
+  const low = Math.min(...rows.map((candle) => candle.low));
+  const range = high - low;
+  const trueRangeSum = rows.reduce((sum, _, offset) => sum + trueRangeAt(candles, index - rows.length + 1 + offset), 0);
+  return range > 0 && trueRangeSum > 0 ? (100 * Math.log10(trueRangeSum / range)) / Math.log10(rows.length) : 50;
+}
+
 function withChartStates(candles: Candle[], lookbackDays: number): ChartCandle[] {
   return candles.map((candle, index) => {
     const baselineIndex = Math.max(0, index - Math.max(1, Math.round(lookbackDays)));
@@ -823,6 +1101,7 @@ function computeTechnicalSignalSnapshots(stock: StockSymbol, marketStock?: Stock
   const candles = stock.candles;
   const closes = candles.map((candle) => candle.close);
   const ema12 = emaValues(closes, 12);
+  const ema20 = emaValues(closes, 20);
   const ema26 = emaValues(closes, 26);
   const macd = closes.map((_, index) => ema12[index] - ema26[index]);
   const macdSignal = emaValues(macd, 9);
@@ -834,6 +1113,14 @@ function computeTechnicalSignalSnapshots(stock: StockSymbol, marketStock?: Stock
       obv += candle.close > previous.close ? candle.volume : candle.close < previous.close ? -candle.volume : 0;
     }
     return obv;
+  });
+
+  let accumulationDistribution = 0;
+  const accumulationDistributionValues = candles.map((candle) => {
+    const range = candle.high - candle.low;
+    const multiplier = range ? ((candle.close - candle.low) - (candle.high - candle.close)) / range : 0;
+    accumulationDistribution += multiplier * candle.volume;
+    return accumulationDistribution;
   });
 
   return candles.map((candle, index) => {
@@ -850,13 +1137,46 @@ function computeTechnicalSignalSnapshots(stock: StockSymbol, marketStock?: Stock
     const obv30 = average(windowSlice(obvValues, index, 30));
     const high20 = highestHigh(candles, index, 20);
     const low20 = lowestLow(candles, index, 20);
+    const high14 = highestHigh(candles, index, 14);
+    const low14 = lowestLow(candles, index, 14);
+    const high55 = highestHigh(candles, index, 55);
+    const low55 = lowestLow(candles, index, 55);
+    const high252 = highestHigh(candles, index, 252);
+    const low252 = lowestLow(candles, index, 252);
     const gapReturn = previous?.close ? (candle.open / previous.close - 1) * 100 : 0;
     const stockReturn20 = percentReturn(candles, index, 20);
     const marketReturn20 = marketStock ? percentReturn(marketStock.candles, Math.min(index, marketStock.candles.length - 1), 20) : 0;
     const atrPct = atrPercentAt(candles, index, 14);
+    const atrValue = atrPct * candle.close;
     const rsi = rsiAt(candles, index, 14);
     const stochastic = stochasticAt(candles, index, 14);
     const dayReturn = previous?.close ? (candle.close / previous.close - 1) * 100 : 0;
+    const ad10 = average(windowSlice(accumulationDistributionValues, index, 10));
+    const ad30 = average(windowSlice(accumulationDistributionValues, index, 30));
+    const adTrend = ad30 ? (ad10 / Math.abs(ad30)) * 100 : 0;
+    const williamsR = high14 > low14 ? ((high14 - candle.close) / (high14 - low14)) * -100 : -50;
+    const cci = cciAt(candles, index, 20);
+    const mfi = moneyFlowIndexAt(candles, index, 14);
+    const cmf = chaikinMoneyFlowAt(candles, index, 20);
+    const keltnerPosition = atrValue ? (candle.close - ema20[index]) / (2 * atrValue) : 0;
+    const donchianPosition = high55 > low55 ? ((candle.close - low55) / (high55 - low55)) * 100 : 50;
+    const bollingerBandwidth = sma20 ? ((4 * closeStd20) / sma20) * 100 : 0;
+    const choppiness = choppinessAt(candles, index, 14);
+    const negativeReturns = simpleReturns(candles, index, 20).filter((value) => value < 0);
+    const downsideVolatility = standardDeviation(negativeReturns) * Math.sqrt(252) * 100;
+    const stockReturns60 = simpleReturns(candles, index, 60);
+    const marketReturns60 = marketStock ? simpleReturns(marketStock.candles, Math.min(index, marketStock.candles.length - 1), 60) : [];
+    const marketVariance60 = standardDeviation(marketReturns60) ** 2;
+    const betaSpy60 = marketVariance60 ? covariance(stockReturns60, marketReturns60) / marketVariance60 : 1;
+    const correlationSpy60 = marketReturns60.length ? correlation(stockReturns60, marketReturns60) : 0;
+    const dollarVolumeRows = windowSlice(candles, index, 20).map((row) => row.close * row.volume);
+    const dollarVolume5 = average(dollarVolumeRows.slice(-5));
+    const dollarVolume20 = average(dollarVolumeRows);
+    const dollarVolumeTrend = dollarVolume20 ? dollarVolume5 / dollarVolume20 : 1;
+    const supportDistance20 = low20 ? (candle.close / low20 - 1) * 100 : 0;
+    const resistanceDistance20 = candle.close ? (high20 / candle.close - 1) * 100 : 0;
+    const high52wDistance = high252 ? (candle.close / high252 - 1) * 100 : 0;
+    const low52wRebound = low252 ? (candle.close / low252 - 1) * 100 : 0;
 
     const values: Record<TechnicalSignalKey, number> = {
       smaTrend: sma50 ? (sma20 / sma50 - 1) * 100 : 0,
@@ -872,6 +1192,25 @@ function computeTechnicalSignalSnapshots(stock: StockSymbol, marketStock?: Stock
       breakout20: high20 > low20 ? ((candle.close - low20) / (high20 - low20)) * 100 : 50,
       gap: gapReturn,
       relativeSpy20: stockReturn20 - marketReturn20,
+      goldenCross50_200: sma200 ? (sma50 / sma200 - 1) * 100 : 0,
+      adxTrend: directionalTrendAt(candles, index, 14),
+      cci20: cci,
+      williamsR14: williamsR,
+      mfi14: mfi,
+      chaikinMoneyFlow20: cmf,
+      accumulationDistributionTrend: adTrend,
+      keltner20: keltnerPosition,
+      donchian55: donchianPosition,
+      squeeze20: bollingerBandwidth,
+      choppiness14: choppiness,
+      downsideVolatility20: downsideVolatility,
+      betaSpy60,
+      correlationSpy60,
+      dollarVolumeTrend,
+      supportDistance20,
+      resistanceDistance20,
+      high52wDistance,
+      low52wRebound,
     };
 
     const scores: Record<TechnicalSignalKey, number> = {
@@ -888,6 +1227,25 @@ function computeTechnicalSignalSnapshots(stock: StockSymbol, marketStock?: Stock
       breakout20: candle.close >= high20 * 0.995 ? 1 : candle.close <= low20 * 1.005 ? -1 : clampScore((values.breakout20 - 50) / 38),
       gap: clampScore(gapReturn / 3),
       relativeSpy20: clampScore(values.relativeSpy20 / 10),
+      goldenCross50_200: clampScore(values.goldenCross50_200 / 8),
+      adxTrend: clampScore(values.adxTrend / 45),
+      cci20: clampScore(cci / 160),
+      williamsR14: clampScore((williamsR + 50) / 35),
+      mfi14: mfi > 82 ? clampScore((82 - mfi) / 22) : mfi < 25 ? clampScore((45 - mfi) / 24) : clampScore((mfi - 50) / 30),
+      chaikinMoneyFlow20: clampScore(cmf * 3),
+      accumulationDistributionTrend: clampScore(adTrend / 55),
+      keltner20: clampScore(keltnerPosition > 1.8 ? 0.4 - (keltnerPosition - 1.8) * 0.35 : keltnerPosition / 1.4),
+      donchian55: candle.close >= high55 * 0.995 ? 1 : candle.close <= low55 * 1.005 ? -1 : clampScore((donchianPosition - 50) / 38),
+      squeeze20: clampScore(((12 - bollingerBandwidth) / 12) * (stockReturn20 >= 0 ? 0.9 : -0.9)),
+      choppiness14: clampScore((55 - choppiness) / 25),
+      downsideVolatility20: clampScore((22 - downsideVolatility) / 22),
+      betaSpy60: clampScore((1.45 - betaSpy60) / 1.25),
+      correlationSpy60: clampScore(correlationSpy60 * (marketReturn20 >= 0 ? 1 : -1)),
+      dollarVolumeTrend: clampScore((dollarVolumeTrend - 1) * (dayReturn >= 0 ? 0.75 : -0.75)),
+      supportDistance20: clampScore((supportDistance20 - 2) / 12),
+      resistanceDistance20: clampScore((8 - resistanceDistance20) / 8),
+      high52wDistance: clampScore((high52wDistance + 18) / 18),
+      low52wRebound: clampScore((low52wRebound - 8) / 25),
     };
 
     return {
@@ -2612,14 +2970,23 @@ function RecommendationStrip({ recommendations }: { recommendations?: WindowedRe
 }
 
 function formatSignalValue(key: TechnicalSignalKey, value: number) {
-  if (key === "volumeRatio") {
+  if (key === "volumeRatio" || key === "dollarVolumeTrend") {
     return `${value.toFixed(2)}x`;
   }
-  if (key === "rsi14" || key === "stochastic14" || key === "breakout20") {
+  if (key === "rsi14" || key === "stochastic14" || key === "breakout20" || key === "mfi14" || key === "donchian55" || key === "choppiness14") {
     return value.toFixed(1);
   }
   if (key === "bollinger20") {
     return `${value.toFixed(2)}z`;
+  }
+  if (key === "williamsR14" || key === "cci20" || key === "adxTrend") {
+    return value.toFixed(1);
+  }
+  if (key === "keltner20") {
+    return `${value.toFixed(2)}ch`;
+  }
+  if (key === "chaikinMoneyFlow20" || key === "correlationSpy60" || key === "betaSpy60") {
+    return value.toFixed(2);
   }
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
