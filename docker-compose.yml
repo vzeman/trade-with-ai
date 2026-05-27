@@ -6,6 +6,8 @@ services:
     container_name: trade-with-ai
     ports:
       - "5173:5173"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/app/public/data
     environment:

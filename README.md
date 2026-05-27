@@ -1,8 +1,8 @@
 # Trade With AI
 
-Trade With AI is a browser-based stock portfolio and signal dashboard for Alpaca-powered research and paper/live account monitoring.
+Trade With AI is a browser-based stock portfolio and signal dashboard for Alpaca-powered market data plus paper/live broker account monitoring.
 
-It combines cached market data, Alpaca account data, technical trading signals, weighted recommendations, portfolio P/L views, and order placement controls in one UI.
+It combines cached market data, Alpaca and Interactive Brokers portfolio connectors, technical trading signals, weighted recommendations, portfolio P/L views, and order placement controls in one UI.
 
 > This project is research software. It is not financial advice and it does not guarantee profitable trading.
 
@@ -24,9 +24,10 @@ It combines cached market data, Alpaca account data, technical trading signals, 
   - 20-day breakout
   - gap pressure
   - 20-day relative strength vs SPY
-- Portfolio page with Alpaca positions, orders, activities, balances, P/L cards, current holdings, and recommended trades.
-- Alpaca order dialog with the common Trading API order options.
-- Background browser sync for Alpaca portfolio data and 1-minute intraday cache while the app is open.
+- Portfolio page with multiple named portfolios and per-portfolio trading connectors.
+- Alpaca Trading and Interactive Brokers TWS / IB Gateway connector options.
+- Order dialog with common Alpaca order options and stock quantity orders for Interactive Brokers.
+- Background browser sync for Alpaca 1-minute intraday cache while the app is open.
 - Docker Compose setup so users do not need to install Node.js locally.
 
 ## What Is Not Committed
@@ -74,10 +75,8 @@ The app starts even without market cache files. Add market cache files into `./d
 
 ## Alpaca Setup
 
-Open **Settings** in the app and enter:
+Open **Settings** in the app and enter the global Alpaca market-data credentials:
 
-- Alpaca Trading API endpoint, for example `https://paper-api.alpaca.markets/v2`
-- Account ID, optional for display/notes
 - API key
 - Secret key
 
@@ -85,9 +84,32 @@ Credentials are stored only in your browser localStorage. They are not committed
 
 After credentials are set:
 
-- the app syncs portfolio data in the background every minute while open
 - the Settings screen shows a manual **Sync Alpaca data now** button
 - 1-minute bars are cached under `./data/intraday`
+
+For Alpaca portfolio trading, open **Portfolios**, select an Alpaca Trading portfolio, and configure that portfolio's endpoint, account ID, API key, and secret.
+
+## Interactive Brokers Setup
+
+Interactive Brokers trading uses a local TWS or IB Gateway socket connection. Start with paper trading.
+
+1. Install and open Trader Workstation or IB Gateway.
+2. Log in to the IBKR account.
+3. Enable API socket clients in TWS / Gateway settings.
+4. Use one of the common ports:
+   - `7497` for TWS paper trading
+   - `7496` for TWS live trading
+   - `4002` for IB Gateway paper trading
+   - `4001` for IB Gateway live trading
+5. In **Portfolios**, create or edit a portfolio and choose **Interactive Brokers**.
+6. Configure:
+   - Host: `127.0.0.1` when running the app locally with npm
+   - Host: `host.docker.internal` when running the app in Docker and TWS/Gateway runs on your host machine
+   - Port: one of the ports above
+   - Client ID: any unique integer, for example `1`
+   - Account ID: optional; leave empty to use the first managed account returned by IBKR
+
+The connector can test the socket connection, load account summary, positions, open/completed orders, current-day executions, and submit stock quantity orders. The first testing target should be paper trading.
 
 ## Market Cache
 

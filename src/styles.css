@@ -1669,6 +1669,25 @@ select {
   font-size: 13px;
 }
 
+.connector-status-panel {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid #b9d9c6;
+  border-radius: 8px;
+  background: #eefaf2;
+}
+
+.connector-status-panel strong {
+  color: #17633a;
+}
+
+.connector-status-panel span {
+  color: #365244;
+  font-size: 13px;
+}
+
 .panel,
 .settings-panel {
   padding: 18px;
@@ -1972,6 +1991,10 @@ select {
   color: #64707d;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.connector-help {
+  grid-column: 1 / -1;
 }
 
 .transaction-form {

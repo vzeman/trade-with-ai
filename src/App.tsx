@@ -541,6 +541,8 @@ type ManagedPortfolio = {
   };
 };
 
+type InteractiveBrokersConfig = NonNullable<ManagedPortfolio["interactiveBrokers"]>;
+
 type AlpacaAccount = Record<string, string | number | boolean | null | undefined> & {
   cash?: string;
   equity?: string;
@@ -637,6 +639,28 @@ type AlpacaPortfolioData = {
   history: AlpacaPortfolioHistory;
   orders: AlpacaOrder[];
   activities: AlpacaActivity[];
+  meta?: Record<string, unknown>;
+};
+
+type InteractiveBrokersPortfolioResponse = {
+  ok: boolean;
+  error?: string;
+  portfolio?: AlpacaPortfolioData;
+};
+
+type InteractiveBrokersOrderResponse = {
+  ok: boolean;
+  error?: string;
+  order?: AlpacaOrder;
+  warnings?: string[];
+};
+
+type InteractiveBrokersTestResponse = {
+  ok: boolean;
+  error?: string;
+  managedAccounts?: string[];
+  nextOrderId?: number;
+  warnings?: string[];
 };
 
 type PortfolioView = "overview" | "orders" | "activities" | "balances";
@@ -1270,6 +1294,28 @@ function alpacaCredentialsForPortfolio(portfolio: ManagedPortfolio | null | unde
     apiKey,
     secret,
     accountId: portfolio.alpaca?.accountId?.trim() || undefined,
+  };
+}
+
+function interactiveBrokersConfigForPortfolio(portfolio: ManagedPortfolio | null | undefined): InteractiveBrokersConfig | null {
+  if (!portfolio || portfolio.driver !== "interactive-brokers") {
+    return null;
+  }
+  const config = {
+    ...defaultInteractiveBrokersConfig(),
+    ...(portfolio.interactiveBrokers ?? {}),
+  };
+  const port = Number(config.port);
+  const clientId = Number(config.clientId);
+  if (!config.host.trim() || !Number.isInteger(port) || port <= 0 || !Number.isInteger(clientId) || clientId < 0) {
+    return null;
+  }
+  return {
+    host: config.host.trim(),
+    port: String(port),
+    clientId: String(clientId),
+    accountId: config.accountId?.trim() || "",
+    paper: Boolean(config.paper),
   };
 }
 
@@ -2420,6 +2466,41 @@ async function loadAlpacaPortfolio(credentialsOverride?: AlpacaCredentials | nul
     alpacaRequest<AlpacaActivity[]>("/v2/account/activities?direction=desc&page_size=100", {}, credentialsOverride),
   ]);
   return { account, positions, history, orders, activities };
+}
+
+async function interactiveBrokersRequest<T>(path: string, payload: Record<string, unknown>): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  let body: T & { error?: string; ok?: boolean };
+  try {
+    body = (await response.json()) as T & { error?: string; ok?: boolean };
+  } catch {
+    throw new Error(`Interactive Brokers request failed: ${response.status}`);
+  }
+  if (!response.ok || body.ok === false) {
+    throw new Error(body.error ?? `Interactive Brokers request failed: ${response.status}`);
+  }
+  return body;
+}
+
+async function testInteractiveBrokersConnection(config: InteractiveBrokersConfig): Promise<InteractiveBrokersTestResponse> {
+  return interactiveBrokersRequest<InteractiveBrokersTestResponse>("/api/brokers/interactive-brokers/test", { config });
+}
+
+async function loadInteractiveBrokersPortfolio(config: InteractiveBrokersConfig): Promise<AlpacaPortfolioData> {
+  const payload = await interactiveBrokersRequest<InteractiveBrokersPortfolioResponse>("/api/brokers/interactive-brokers/portfolio", { config });
+  if (!payload.portfolio) {
+    throw new Error("Interactive Brokers portfolio response did not include portfolio data.");
+  }
+  return payload.portfolio;
+}
+
+async function submitInteractiveBrokersOrder(config: InteractiveBrokersConfig, order: AlpacaOrderRequest): Promise<AlpacaOrder | undefined> {
+  const payload = await interactiveBrokersRequest<InteractiveBrokersOrderResponse>("/api/brokers/interactive-brokers/orders", { config, order });
+  return payload.order;
 }
 
 async function syncIntradayMinuteCache(symbols: string[], feed: MinuteSyncFeed): Promise<IntradaySyncResponse> {
@@ -5050,7 +5131,9 @@ function PortfolioScreen({
   const [volumeSignals, setVolumeSignals] = useState<VolumeStateRiskSignal[]>([]);
   const [error, setError] = useState("");
   const [alpacaError, setAlpacaError] = useState("");
+  const [connectorMessage, setConnectorMessage] = useState("");
   const [, setAlpacaLoading] = useState(false);
+  const [connectionTesting, setConnectionTesting] = useState(false);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [bulkOrderSubmitting, setBulkOrderSubmitting] = useState(false);
   const [transactionType, setTransactionType] = useState<"buy" | "sell">("buy");
@@ -5127,7 +5210,9 @@ function PortfolioScreen({
     [activities, alpacaData, orders, stocks],
   );
   const brokerCredentials = useMemo(() => alpacaCredentialsForPortfolio(portfolio), [portfolio]);
-  const credentialsConfigured = portfolio.driver === "alpaca" ? Boolean(brokerCredentials) : false;
+  const ibkrConfig = useMemo(() => interactiveBrokersConfigForPortfolio(portfolio), [portfolio]);
+  const credentialsConfigured = portfolio.driver === "alpaca" ? Boolean(brokerCredentials) : Boolean(ibkrConfig);
+  const brokerName = brokerDriverLabel(portfolio.driver);
   const recommendedTrades = useMemo(
     () => buildRecommendedPortfolioTrades(stocks, recommendations, holdings, currentCash, recommendedTradeCount),
     [currentCash, holdings, recommendations, recommendedTradeCount, stocks],
@@ -5144,6 +5229,7 @@ function PortfolioScreen({
     setPortfolioDraft(normalizeManagedPortfolio(portfolio));
     setAlpacaData(null);
     setAlpacaError("");
+    setConnectorMessage("");
   }, [portfolio]);
 
   useEffect(() => {
@@ -5152,6 +5238,26 @@ function PortfolioScreen({
   }, []);
 
   function refreshAlpacaPortfolio() {
+    if (portfolio.driver === "interactive-brokers") {
+      if (!ibkrConfig) {
+        setAlpacaData(null);
+        setAlpacaError("Configure this portfolio's Interactive Brokers host, port, and client ID to load live portfolio data.");
+        return Promise.resolve();
+      }
+      setAlpacaLoading(true);
+      setAlpacaError("");
+      return loadInteractiveBrokersPortfolio(ibkrConfig)
+        .then((nextPortfolio) => {
+          setAlpacaData(nextPortfolio);
+        })
+        .catch((loadError: Error) => {
+          setAlpacaData(null);
+          setAlpacaError(loadError.message);
+        })
+        .finally(() => {
+          setAlpacaLoading(false);
+        });
+    }
     if (portfolio.driver !== "alpaca") {
       setAlpacaData(null);
       setAlpacaError(`${brokerDriverLabel(portfolio.driver)} trading connector is configured, but live API loading is not implemented yet.`);
@@ -5175,6 +5281,33 @@ function PortfolioScreen({
       .finally(() => {
         setAlpacaLoading(false);
       });
+  }
+
+  async function testPortfolioConnection() {
+    if (portfolioDraft.driver !== "interactive-brokers") {
+      savePortfolioSettings();
+      return;
+    }
+    const draft = normalizeManagedPortfolio(portfolioDraft);
+    const config = interactiveBrokersConfigForPortfolio(draft);
+    if (!config) {
+      setConnectorMessage("");
+      setAlpacaError("Configure Interactive Brokers host, port, and client ID before testing.");
+      return;
+    }
+    setConnectionTesting(true);
+    setAlpacaError("");
+    setConnectorMessage("");
+    try {
+      const result = await testInteractiveBrokersConnection(config);
+      const accounts = result.managedAccounts?.length ? ` Accounts: ${result.managedAccounts.join(", ")}.` : "";
+      const warnings = result.warnings?.length ? ` Warnings: ${result.warnings.join(" · ")}` : "";
+      setConnectorMessage(`Interactive Brokers connected. Next order ID ${result.nextOrderId ?? "--"}.${accounts}${warnings}`);
+    } catch (testError) {
+      setAlpacaError(testError instanceof Error ? testError.message : "Interactive Brokers connection test failed.");
+    } finally {
+      setConnectionTesting(false);
+    }
   }
 
   useEffect(() => {
@@ -5216,7 +5349,7 @@ function PortfolioScreen({
     };
     window.addEventListener("alpaca-data-synced", listener);
     return () => window.removeEventListener("alpaca-data-synced", listener);
-  }, [brokerCredentials, portfolio.driver]);
+  }, [brokerCredentials, ibkrConfig, portfolio.driver]);
 
   useEffect(() => {
     const stock = stocks.find((item) => item.symbol === transactionSymbol);
@@ -5229,7 +5362,7 @@ function PortfolioScreen({
     if (dataset) {
       void refreshAlpacaPortfolio();
     }
-  }, [brokerCredentials, dataset, portfolio.driver, portfolio.id]);
+  }, [brokerCredentials, ibkrConfig, dataset, portfolio.driver, portfolio.id]);
 
   function updatePortfolioDraft(patch: Partial<ManagedPortfolio>) {
     setPortfolioDraft((current) => ({
@@ -5349,26 +5482,37 @@ function PortfolioScreen({
   }
 
   async function submitOrder() {
-    if (portfolio.driver !== "alpaca" || !brokerCredentials) {
-      setAlpacaError(`${brokerDriverLabel(portfolio.driver)} order submission is not connected yet.`);
+    if (!credentialsConfigured) {
+      setAlpacaError(`Configure this portfolio's ${brokerName} connector before submitting orders.`);
       return;
     }
     setOrderSubmitting(true);
     setAlpacaError("");
     try {
-      await submitAlpacaOrder(buildOrderRequest(), brokerCredentials);
+      const order = buildOrderRequest();
+      if (portfolio.driver === "interactive-brokers") {
+        if (!ibkrConfig) {
+          throw new Error("Interactive Brokers connector is not configured.");
+        }
+        await submitInteractiveBrokersOrder(ibkrConfig, order);
+      } else {
+        if (!brokerCredentials) {
+          throw new Error("Alpaca connector is not configured.");
+        }
+        await submitAlpacaOrder(order, brokerCredentials);
+      }
       setSelectedPortfolioSymbol(transactionSymbol);
       setTradeDialogOpen(false);
       await refreshAlpacaPortfolio();
     } catch (submitError) {
-      setAlpacaError(submitError instanceof Error ? submitError.message : "Alpaca order failed.");
+      setAlpacaError(submitError instanceof Error ? submitError.message : `${brokerName} order failed.`);
     } finally {
       setOrderSubmitting(false);
     }
   }
 
   async function submitRecommendedOrders() {
-    if (!recommendedTrades.length || !credentialsConfigured || !brokerCredentials) {
+    if (!recommendedTrades.length || !credentialsConfigured) {
       return;
     }
     setBulkOrderSubmitting(true);
@@ -5378,7 +5522,23 @@ function PortfolioScreen({
     try {
       for (const trade of recommendedTrades) {
         try {
-          await submitAlpacaMarketOrder(trade.symbol, "buy", trade.shares, brokerCredentials);
+          if (portfolio.driver === "interactive-brokers") {
+            if (!ibkrConfig) {
+              throw new Error("Interactive Brokers connector is not configured.");
+            }
+            await submitInteractiveBrokersOrder(ibkrConfig, {
+              symbol: trade.symbol,
+              qty: String(trade.shares),
+              side: "buy",
+              type: "market",
+              time_in_force: "day",
+            });
+          } else {
+            if (!brokerCredentials) {
+              throw new Error("Alpaca connector is not configured.");
+            }
+            await submitAlpacaMarketOrder(trade.symbol, "buy", trade.shares, brokerCredentials);
+          }
           placedCount += 1;
         } catch (submitError) {
           const reason = submitError instanceof Error ? submitError.message : "unknown error";
@@ -5425,7 +5585,7 @@ function PortfolioScreen({
       <main className="page">
         <section className="empty-state">
           <h1>Loading portfolio</h1>
-          <p>Reading cached market prices and Alpaca portfolio data.</p>
+          <p>Reading cached market prices and broker portfolio data.</p>
         </section>
       </main>
     );
@@ -5526,6 +5686,9 @@ function PortfolioScreen({
                 />
                 <span>Paper trading</span>
               </label>
+              <p className="portfolio-cash-note connector-help">
+                Run TWS or IB Gateway with API socket clients enabled. Use 7497 for TWS paper, 7496 for TWS live, 4002 for Gateway paper, or 4001 for Gateway live. In Docker, host is usually host.docker.internal.
+              </p>
             </>
           )}
         </div>
@@ -5534,14 +5697,26 @@ function PortfolioScreen({
             <Save size={18} />
             Save portfolio
           </button>
+          {portfolioDraft.driver === "interactive-brokers" && (
+            <button className="text-button" onClick={testPortfolioConnection} disabled={connectionTesting}>
+              {connectionTesting ? "Testing IBKR" : "Test IBKR connection"}
+            </button>
+          )}
           <button className="text-button" onClick={onAddPortfolio}>Add another</button>
           <button className="text-button" onClick={() => onDeletePortfolio(portfolio.id)} disabled={portfolios.length <= 1}>Remove portfolio</button>
         </div>
       </section>
 
+      {connectorMessage && (
+        <section className="connector-status-panel" aria-label="Broker connector status">
+          <strong>Connector ready</strong>
+          <span>{connectorMessage}</span>
+        </section>
+      )}
+
       {alpacaError && (
-        <section className="alpaca-status-panel" aria-label="Alpaca portfolio status">
-          <strong>Alpaca portfolio not connected</strong>
+        <section className="alpaca-status-panel" aria-label="Broker portfolio status">
+          <strong>{brokerName} portfolio not connected</strong>
           <span>{alpacaError}</span>
         </section>
       )}
@@ -5595,7 +5770,7 @@ function PortfolioScreen({
             </span>
           </div>
           <p className="portfolio-cash-note">
-            Values are loaded from Alpaca Trading API, not the browser portfolio cache.
+            Values are loaded from the selected trading connector, not the browser portfolio cache.
           </p>
         </div>
 
@@ -5606,8 +5781,8 @@ function PortfolioScreen({
           </div>
           <div className="trade-action-card">
             <div>
-              <strong>{orders.length} Alpaca orders</strong>
-              <span>Place buy or sell market orders through the connected Alpaca account.</span>
+              <strong>{orders.length} {brokerName} orders</strong>
+              <span>Place buy or sell market orders through the connected {brokerName} account.</span>
             </div>
             <button className="primary-action compact" onClick={() => setTradeDialogOpen(true)} disabled={!credentialsConfigured}>
               + Place order
@@ -5618,9 +5793,9 @@ function PortfolioScreen({
 
       {tradeDialogOpen && (
         <div className="dialog-backdrop" role="presentation" onClick={() => setTradeDialogOpen(false)}>
-          <section className="trade-dialog" role="dialog" aria-modal="true" aria-label="Place Alpaca order" onClick={(event) => event.stopPropagation()}>
+          <section className="trade-dialog" role="dialog" aria-modal="true" aria-label={`Place ${brokerName} order`} onClick={(event) => event.stopPropagation()}>
             <div className="panel-head">
-              <h2>Place Alpaca market order</h2>
+              <h2>Place {brokerName} order</h2>
               <button className="icon-button" onClick={() => setTradeDialogOpen(false)} aria-label="Close order dialog">X</button>
             </div>
             <div className="transaction-form order-form-grid">
@@ -5784,7 +5959,7 @@ function PortfolioScreen({
               </div>
             </div>
             <p className="portfolio-cash-note">
-              Alpaca validates combinations by asset type. For example, extended hours requires a limit order with day or GTC, and bracket/OCO/OTO orders use take-profit and stop-loss fields.
+              Alpaca validates bracket/OCO/OTO combinations by asset type. Interactive Brokers currently supports stock market, limit, stop, stop-limit, and trailing-stop quantity orders through this connector.
             </p>
             <div className="dialog-actions">
               <button className="text-button" onClick={() => setTradeDialogOpen(false)}>Cancel</button>
@@ -5910,7 +6085,7 @@ function PortfolioScreen({
               {!holdings.length && (
                 <tr>
                   <td colSpan={10} className="empty-table-cell">
-                    {credentialsConfigured ? "No open Alpaca positions returned." : "Connect Alpaca in Settings to load current holdings."}
+                    {credentialsConfigured ? `No open ${brokerName} positions returned.` : `Connect ${brokerName} in this portfolio to load current holdings.`}
                   </td>
                 </tr>
               )}
@@ -6052,7 +6227,7 @@ function PortfolioScreen({
             <span>
               {currentCash > 0
                 ? "Trend, risk, and recommendation filters do not currently produce a clean buy candidate."
-                : "Alpaca cash is unavailable or there is no free cash to allocate."}
+                : `${brokerName} cash is unavailable or there is no free cash to allocate.`}
             </span>
           </div>
         )}
@@ -6071,7 +6246,7 @@ function PortfolioScreen({
               <button className="icon-button" onClick={() => setBulkOrderDialogOpen(false)} aria-label="Close bulk order dialog">X</button>
             </div>
             <p className="portfolio-cash-note">
-              This will submit separate day market buy orders to Alpaca. Final fills can differ from latest cached prices.
+              This will submit separate day market buy orders to {brokerName}. Final fills can differ from latest cached prices.
             </p>
             <div className="table-wrap bulk-order-review">
               <table>
