@@ -50,7 +50,19 @@ import {
 
 type Screen = "stocks" | "portfolio" | "strategies" | "settings";
 type ChartMode = "price" | "candles" | "volume" | "returns";
-type StrategyUniverseMode = "all" | "top10-volume" | "top20-volume";
+type StrategyUniverseMode =
+  | "all"
+  | "top10-volume"
+  | "top20-volume"
+  | "top10-weight"
+  | "top20-weight"
+  | "top10-volume-weight"
+  | "top20-volume-weight"
+  | "top20-relative-strength"
+  | "bull-only"
+  | "bull-low-medium-risk"
+  | "top20-bull-volume"
+  | "low-medium-risk";
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const MARKET_STATES: MarketState[] = ["Bull", "Sideways", "Bear"];
@@ -1222,26 +1234,83 @@ function volumeNumber(volume: string) {
 }
 
 function strategyUniverseLabel(mode: StrategyUniverseMode) {
-  if (mode === "top10-volume") {
-    return "Top 10 by volume";
-  }
-  if (mode === "top20-volume") {
-    return "Top 20 by volume";
-  }
-  return "All cached symbols";
+  const labels: Record<StrategyUniverseMode, string> = {
+    all: "All cached symbols",
+    "top10-volume": "Top 10 by volume",
+    "top20-volume": "Top 20 by volume",
+    "top10-weight": "Top 10 by valuation weight",
+    "top20-weight": "Top 20 by valuation weight",
+    "top10-volume-weight": "Top 10 volume + valuation",
+    "top20-volume-weight": "Top 20 volume + valuation",
+    "top20-relative-strength": "Top 20 relative strength",
+    "bull-only": "Bull state only",
+    "bull-low-medium-risk": "Bull + low/medium risk",
+    "top20-bull-volume": "Top 20 bull by volume",
+    "low-medium-risk": "Low/medium risk only",
+  };
+  return labels[mode] ?? labels.all;
+}
+
+function strategyUniverseOptions(): Array<{ value: StrategyUniverseMode; label: string }> {
+  return [
+    { value: "all", label: strategyUniverseLabel("all") },
+    { value: "top10-volume", label: strategyUniverseLabel("top10-volume") },
+    { value: "top20-volume", label: strategyUniverseLabel("top20-volume") },
+    { value: "top10-weight", label: strategyUniverseLabel("top10-weight") },
+    { value: "top20-weight", label: strategyUniverseLabel("top20-weight") },
+    { value: "top10-volume-weight", label: strategyUniverseLabel("top10-volume-weight") },
+    { value: "top20-volume-weight", label: strategyUniverseLabel("top20-volume-weight") },
+    { value: "top20-relative-strength", label: strategyUniverseLabel("top20-relative-strength") },
+    { value: "bull-only", label: strategyUniverseLabel("bull-only") },
+    { value: "bull-low-medium-risk", label: strategyUniverseLabel("bull-low-medium-risk") },
+    { value: "top20-bull-volume", label: strategyUniverseLabel("top20-bull-volume") },
+    { value: "low-medium-risk", label: strategyUniverseLabel("low-medium-risk") },
+  ];
+}
+
+function topStocksByScore(stocks: StockSymbol[], limit: number, score: (stock: StockSymbol) => number) {
+  return [...stocks]
+    .sort((left, right) => score(right) - score(left) || left.symbol.localeCompare(right.symbol))
+    .slice(0, limit);
 }
 
 function strategyUniverseStocks(stocks: StockSymbol[], mode: StrategyUniverseMode) {
+  const spy = stocks.find((stock) => stock.symbol === "SPY");
+  const tradable = stocks.filter((stock) => stock.symbol !== "SPY");
+  const withSpy = (rows: StockSymbol[]) => (spy ? [spy, ...rows] : rows);
   if (mode === "all") {
     return stocks;
   }
-  const limit = mode === "top10-volume" ? 10 : 20;
-  const spy = stocks.find((stock) => stock.symbol === "SPY");
-  const topByVolume = stocks
-    .filter((stock) => stock.symbol !== "SPY")
-    .sort((left, right) => volumeNumber(right.volume) - volumeNumber(left.volume) || left.symbol.localeCompare(right.symbol))
-    .slice(0, limit);
-  return spy ? [spy, ...topByVolume] : topByVolume;
+  if (mode === "bull-only") {
+    return withSpy(tradable.filter((stock) => stock.marketState === "Bull"));
+  }
+  if (mode === "bull-low-medium-risk") {
+    return withSpy(tradable.filter((stock) => stock.marketState === "Bull" && stock.risk !== "High"));
+  }
+  if (mode === "low-medium-risk") {
+    return withSpy(tradable.filter((stock) => stock.risk !== "High"));
+  }
+  if (mode === "top20-bull-volume") {
+    return withSpy(topStocksByScore(tradable.filter((stock) => stock.marketState === "Bull"), 20, (stock) => volumeNumber(stock.volume)));
+  }
+  if (mode === "top20-relative-strength") {
+    return withSpy(topStocksByScore(tradable, 20, (stock) => stock.trendReturn + stock.change * 0.5));
+  }
+  if (mode === "top10-weight" || mode === "top20-weight") {
+    return withSpy(topStocksByScore(tradable, mode === "top10-weight" ? 10 : 20, (stock) => stock.weight));
+  }
+  if (mode === "top10-volume-weight" || mode === "top20-volume-weight") {
+    const maxVolume = Math.max(...tradable.map((stock) => volumeNumber(stock.volume)), 1);
+    const maxWeight = Math.max(...tradable.map((stock) => stock.weight), 1);
+    return withSpy(
+      topStocksByScore(tradable, mode === "top10-volume-weight" ? 10 : 20, (stock) => {
+        const volumeScore = volumeNumber(stock.volume) / maxVolume;
+        const weightScore = stock.weight / maxWeight;
+        return volumeScore * 0.55 + weightScore * 0.45;
+      }),
+    );
+  }
+  return withSpy(topStocksByScore(tradable, mode === "top10-volume" ? 10 : 20, (stock) => volumeNumber(stock.volume)));
 }
 
 function stateFromTrend(trendReturn: number): MarketState {
@@ -5798,6 +5867,7 @@ function StrategiesScreen() {
   const selectedResult = results.find((result) => result.strategyId === selectedStrategy?.id) ?? results[0];
   const winningResult = sortedResults[0];
   const comparisonResults = sortedResults.slice(0, 5);
+  const universeOptions = useMemo(() => strategyUniverseOptions(), []);
   const comparisonRows = useMemo(() => {
     const source = comparisonResults[0]?.points ?? [];
     return source.map((point, index) => {
@@ -5811,7 +5881,7 @@ function StrategiesScreen() {
   const chartColors = ["#177e89", "#6d5bd0", "#c88a00", "#c2414b", "#5d6470"];
 
   useEffect(() => {
-    if (!["all", "top10-volume", "top20-volume"].includes(strategyUniverse)) {
+    if (!strategyUniverseOptions().some((option) => option.value === strategyUniverse)) {
       setStrategyUniverse("all");
       return;
     }
@@ -5927,9 +5997,9 @@ function StrategiesScreen() {
           <label className="compact-select">
             Universe
             <select value={strategyUniverse} onChange={(event) => setStrategyUniverse(event.target.value as StrategyUniverseMode)}>
-              <option value="all">All cached symbols</option>
-              <option value="top10-volume">Top 10 by volume</option>
-              <option value="top20-volume">Top 20 by volume</option>
+              {universeOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
             </select>
           </label>
           <label className="compact-select">
