@@ -50,6 +50,7 @@ import {
 
 type Screen = "stocks" | "portfolio" | "strategies" | "settings";
 type ChartMode = "price" | "candles" | "volume" | "returns";
+type StrategyUniverseMode = "all" | "top10-volume" | "top20-volume";
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const MARKET_STATES: MarketState[] = ["Bull", "Sideways", "Bear"];
@@ -1218,6 +1219,29 @@ function volumeNumber(volume: string) {
     return number * 1_000;
   }
   return number;
+}
+
+function strategyUniverseLabel(mode: StrategyUniverseMode) {
+  if (mode === "top10-volume") {
+    return "Top 10 by volume";
+  }
+  if (mode === "top20-volume") {
+    return "Top 20 by volume";
+  }
+  return "All cached symbols";
+}
+
+function strategyUniverseStocks(stocks: StockSymbol[], mode: StrategyUniverseMode) {
+  if (mode === "all") {
+    return stocks;
+  }
+  const limit = mode === "top10-volume" ? 10 : 20;
+  const spy = stocks.find((stock) => stock.symbol === "SPY");
+  const topByVolume = stocks
+    .filter((stock) => stock.symbol !== "SPY")
+    .sort((left, right) => volumeNumber(right.volume) - volumeNumber(left.volume) || left.symbol.localeCompare(right.symbol))
+    .slice(0, limit);
+  return spy ? [spy, ...topByVolume] : topByVolume;
 }
 
 function stateFromTrend(trendReturn: number): MarketState {
@@ -5723,6 +5747,9 @@ function StrategiesScreen() {
   const [strategies, setStrategies] = useState<TradingStrategy[]>(() => loadStrategies());
   const [selectedStrategyId, setSelectedStrategyId] = useState(() => loadStrategies()[0]?.id ?? "default-balanced");
   const [backtestWindow, setBacktestWindow] = useState(90);
+  const [strategyUniverse, setStrategyUniverse] = useState<StrategyUniverseMode>(
+    () => (localStorage.getItem("strategy_universe_mode") as StrategyUniverseMode | null) ?? "all",
+  );
   const [newStrategyName, setNewStrategyName] = useState("");
   const [appliedStrategy, setAppliedStrategy] = useState("");
 
@@ -5754,13 +5781,14 @@ function StrategiesScreen() {
   }, [selectedStrategyId, strategies]);
 
   const stocks = useMemo(() => applyStateLookback(dataset?.symbols ?? [], DEFAULT_STATE_LOOKBACK), [dataset]);
+  const simulationStocks = useMemo(() => strategyUniverseStocks(stocks, strategyUniverse), [stocks, strategyUniverse]);
   const technicalSignals = useMemo(() => (dataset ? buildCachedTechnicalSignals(dataset) : null), [dataset]);
   const results = useMemo(
     () =>
       strategies.map((strategy) =>
-        simulateStrategy(strategy, stocks, volumeSignals, technicalSignals, backtestWindow),
+        simulateStrategy(strategy, simulationStocks, volumeSignals, technicalSignals, backtestWindow),
       ),
-    [backtestWindow, stocks, strategies, technicalSignals, volumeSignals],
+    [backtestWindow, simulationStocks, strategies, technicalSignals, volumeSignals],
   );
   const sortedResults = useMemo(
     () => [...results].sort((left, right) => right.alphaPct - left.alphaPct || right.returnPct - left.returnPct),
@@ -5781,6 +5809,14 @@ function StrategiesScreen() {
     });
   }, [comparisonResults]);
   const chartColors = ["#177e89", "#6d5bd0", "#c88a00", "#c2414b", "#5d6470"];
+
+  useEffect(() => {
+    if (!["all", "top10-volume", "top20-volume"].includes(strategyUniverse)) {
+      setStrategyUniverse("all");
+      return;
+    }
+    localStorage.setItem("strategy_universe_mode", strategyUniverse);
+  }, [strategyUniverse]);
 
   function updateStrategyWeights(key: TechnicalSignalKey, value: number) {
     if (!selectedStrategy) {
@@ -5887,21 +5923,34 @@ function StrategiesScreen() {
             Compare signal-weight combinations against cached symbols · decisions use prior-day data and trade the next open.
           </p>
         </div>
-        <label className="compact-select">
-          Window
-          <select value={backtestWindow} onChange={(event) => setBacktestWindow(Number(event.target.value))}>
-            {[30, 60, 90, 180, 365].map((days) => (
-              <option key={days} value={days}>Last {days} days</option>
-            ))}
-          </select>
-        </label>
+        <div className="strategy-header-controls">
+          <label className="compact-select">
+            Universe
+            <select value={strategyUniverse} onChange={(event) => setStrategyUniverse(event.target.value as StrategyUniverseMode)}>
+              <option value="all">All cached symbols</option>
+              <option value="top10-volume">Top 10 by volume</option>
+              <option value="top20-volume">Top 20 by volume</option>
+            </select>
+          </label>
+          <label className="compact-select">
+            Window
+            <select value={backtestWindow} onChange={(event) => setBacktestWindow(Number(event.target.value))}>
+              {[30, 60, 90, 180, 365].map((days) => (
+                <option key={days} value={days}>Last {days} days</option>
+              ))}
+            </select>
+          </label>
+        </div>
       </header>
 
       <section className="metrics-grid">
         <Metric label="Best strategy" value={winningResult?.name ?? "--"} tone={(winningResult?.alphaPct ?? 0) >= 0 ? "good" : "warn"} />
         <Metric label="Best return" value={`${winningResult?.returnPct.toFixed(2) ?? "0.00"}%`} tone={(winningResult?.returnPct ?? 0) >= 0 ? "good" : "warn"} />
         <Metric label="Best alpha vs SPY" value={`${winningResult?.alphaPct >= 0 ? "+" : ""}${winningResult?.alphaPct.toFixed(2) ?? "0.00"}%`} tone={(winningResult?.alphaPct ?? 0) >= 0 ? "good" : "warn"} />
-        <Metric label="Simulated symbols" value={`${stocks.filter((stock) => stock.symbol !== "SPY").length}`} />
+        <Metric
+          label="Simulated universe"
+          value={`${strategyUniverseLabel(strategyUniverse)} · ${simulationStocks.filter((stock) => stock.symbol !== "SPY").length}`}
+        />
       </section>
 
       <section className="strategy-layout">
@@ -5947,7 +5996,7 @@ function StrategiesScreen() {
           <div className="panel-head">
             <div>
               <h2>Strategy comparison</h2>
-              <span className="table-sort-summary">top 5 by alpha vs SPY over selected window</span>
+              <span className="table-sort-summary">top 5 by alpha vs SPY over selected window · {strategyUniverseLabel(strategyUniverse)}</span>
             </div>
           </div>
           <ResponsiveContainer width="100%" height={300}>
