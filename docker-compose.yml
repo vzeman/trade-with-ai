@@ -1,0 +1,13 @@
+services:
+  trade-with-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trade-with-ai
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./data:/app/public/data
+    environment:
+      NODE_ENV: development
+    restart: unless-stopped

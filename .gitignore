@@ -1,0 +1,27 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+playwright-report/
+
+# Local TypeScript and tool caches
+*.tsbuildinfo
+.vite/
+.turbo/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Market/cache data. These files can contain licensed, paid, or private data.
+public/data/*
+!public/data/.gitkeep
+data/*
+!data/.gitkeep
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
