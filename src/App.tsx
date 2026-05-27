@@ -778,6 +778,81 @@ function starterStrategies(): TradingStrategy[] {
     breakout20: 0.4,
     donchian55: 0.4,
   });
+  const lowVolatilityCompounder = scaleSignalWeights(defaults, {
+    atr14: 2.05,
+    downsideVolatility20: 2.05,
+    betaSpy60: 1.85,
+    choppiness14: 1.55,
+    priceVsSma200: 1.45,
+    goldenCross50_200: 1.35,
+    supportDistance20: 1.35,
+    gap: 0.45,
+    squeeze20: 0.55,
+  });
+  const riskOffCapitalPreservation = scaleSignalWeights(defaults, {
+    atr14: 2.35,
+    downsideVolatility20: 2.45,
+    betaSpy60: 2.2,
+    correlationSpy60: 1.8,
+    choppiness14: 1.8,
+    priceVsSma200: 1.6,
+    supportDistance20: 1.5,
+    resistanceDistance20: 0.55,
+    gap: 0.25,
+    breakout20: 0.25,
+    donchian55: 0.25,
+    squeeze20: 0.25,
+  });
+  const spyRelativeLeader = scaleSignalWeights(defaults, {
+    relativeSpy20: 2.1,
+    priceVsSma200: 1.55,
+    roc20: 1.7,
+    smaTrend: 1.5,
+    emaMacd: 1.35,
+    high52wDistance: 1.55,
+    low52wRebound: 1.15,
+    betaSpy60: 1.1,
+    correlationSpy60: 0.85,
+  });
+  const qualityBreakoutRiskGuard = scaleSignalWeights(defaults, {
+    breakout20: 1.7,
+    donchian55: 1.65,
+    resistanceDistance20: 1.45,
+    volumeRatio: 1.35,
+    dollarVolumeTrend: 1.35,
+    atr14: 1.65,
+    downsideVolatility20: 1.75,
+    betaSpy60: 1.45,
+    choppiness14: 1.4,
+  });
+  const cashConservative = scaleSignalWeights(defaults, {
+    atr14: 2.7,
+    downsideVolatility20: 2.75,
+    betaSpy60: 2.45,
+    correlationSpy60: 2.0,
+    choppiness14: 2.1,
+    volumeRatio: 0.45,
+    gap: 0.15,
+    breakout20: 0.1,
+    donchian55: 0.1,
+    squeeze20: 0,
+    bollinger20: 0,
+    stochastic14: 0.4,
+    williamsR14: 0.4,
+  });
+  const rotationRecovery = scaleSignalWeights(defaults, {
+    low52wRebound: 1.85,
+    supportDistance20: 1.6,
+    chaikinMoneyFlow20: 1.55,
+    accumulationDistributionTrend: 1.5,
+    mfi14: 1.35,
+    rsi14: 1.25,
+    cci20: 1.25,
+    relativeSpy20: 1.2,
+    high52wDistance: 0.65,
+    betaSpy60: 1.35,
+    downsideVolatility20: 1.35,
+  });
 
   return [
     {
@@ -828,24 +903,79 @@ function starterStrategies(): TradingStrategy[] {
       createdAt: now,
       updatedAt: now,
     },
+    {
+      id: "low-volatility-compounder",
+      name: "Low volatility compounder",
+      description: "Prefers calm uptrends with lower ATR, lower downside volatility, moderate beta, and solid long-term trend support.",
+      weights: lowVolatilityCompounder,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "risk-off-capital-preservation",
+      name: "Risk-off capital preservation",
+      description: "Very defensive profile that heavily penalizes high volatility, high beta, high correlation, choppy action, and speculative breakouts.",
+      weights: riskOffCapitalPreservation,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "spy-relative-leader",
+      name: "SPY relative leader",
+      description: "Searches for stocks beating SPY while staying above long-term trend and near leadership territory.",
+      weights: spyRelativeLeader,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "quality-breakout-risk-guard",
+      name: "Quality breakout risk guard",
+      description: "Combines breakout and volume confirmation with stronger risk filters to avoid fragile high-volatility breakouts.",
+      weights: qualityBreakoutRiskGuard,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "cash-conservative",
+      name: "Cash conservative",
+      description: "Keeps recommendations sparse by muting aggressive signals and requiring unusually clean risk conditions.",
+      weights: cashConservative,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "rotation-recovery",
+      name: "Rotation recovery",
+      description: "Looks for improving money flow and rebounds from support while still applying beta and downside-volatility checks.",
+      weights: rotationRecovery,
+      createdAt: now,
+      updatedAt: now,
+    },
   ];
 }
 
 function loadStrategies(): TradingStrategy[] {
+  const starters = starterStrategies();
   try {
     const parsed = JSON.parse(localStorage.getItem("trading_signal_strategies") ?? "[]") as TradingStrategy[];
     if (Array.isArray(parsed) && parsed.length) {
-      return parsed.map((strategy) => ({
+      const normalized = parsed.map((strategy) => ({
         ...strategy,
         weights: normalizeSignalWeights(strategy.weights),
       }));
+      const existingIds = new Set(normalized.map((strategy) => strategy.id));
+      const missingStarters = starters.filter((strategy) => !existingIds.has(strategy.id));
+      const merged = [...normalized, ...missingStarters];
+      if (missingStarters.length) {
+        saveStrategies(merged);
+      }
+      return merged;
     }
   } catch {
     // Fall through to starter strategies.
   }
-  const strategies = starterStrategies();
-  saveStrategies(strategies);
-  return strategies;
+  saveStrategies(starters);
+  return starters;
 }
 
 function saveStrategies(strategies: TradingStrategy[]) {
